@@ -5,7 +5,7 @@
 - **节点图标**：内置 TFEL Emby 图标库（528 个透明 PNG），添加/编辑节点时可搜索选择
 - **源站保护**：节点源站地址默认隐藏（点击才可查看），**订阅用户不可见源站地址**，也无测速权限
 - **播放统计图**：Chart.js 图表 —— 过去 7 天播放趋势折线 + 今日各节点播放柱状图
-- **部署**：单文件 `server.js` + 单文件 `panel.html`，零依赖，systemd 常驻
+- **部署**：单文件 [server.js](server.js) + 单文件 [panel.html](panel.html)，零依赖，systemd 常驻
 
 ---
 
@@ -58,7 +58,7 @@ emby-proxy/
 mkdir -p /opt/emby-proxy/data
 ```
 
-把 `server.js`、`panel.html` 上传到 `/opt/emby-proxy/`（宝塔文件上传 / scp 均可），再 `ls -l /opt/emby-proxy/` 确认两个文件都在。
+把 [server.js](server.js)、 [ panel.html](panel.html)上传到 `/opt/emby-proxy/`（宝塔文件上传 / scp 均可），再 `ls -l /opt/emby-proxy/` 确认两个文件都在。
 
 ### 第二步：初始化配置
 
