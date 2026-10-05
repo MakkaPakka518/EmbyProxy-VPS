@@ -50,14 +50,6 @@ emby-proxy/
 
 ### 方式一：一键脚本（推荐）
 
-把 `install.sh`、`server.js`、`panel.html` 三个文件放同一目录，然后：
-
-```bash
-sudo bash install.sh
-```
-
-（GitHub 仓库上传后，也可以一行搞定，无需下载文件：）
-
 ```bash
 curl -sSL https://raw.githubusercontent.com/MakkaPakka518/EmbyProxy-VPS/refs/heads/main/install.sh | bash
 ```
