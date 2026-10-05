@@ -343,6 +343,3 @@ ExecStart=node server.js              ← 错误：systemd 环境里 PATH 不完
 
 ---
 
-## License
-
-MIT
