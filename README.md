@@ -58,6 +58,19 @@ curl -sSL https://raw.githubusercontent.com/MakkaPakka518/EmbyProxy-VPS/refs/hea
 
 跑完记下输出的**面板地址**和**管理密钥**，浏览器打开 `http://服务器IP:端口/` 输入密钥即可登录。已安装过再跑一遍会保留原有配置，可当升级用。
 
+#### 一键卸载
+
+不想用了，同样一条命令卸载干净（停止服务、删除 systemd 托管、删除全部配置/节点/订阅者数据）：
+
+```bash
+sudo bash install.sh uninstall
+```
+
+（也可以不下载文件直接卸载：`curl -sSL https://raw.githubusercontent.com/MakkaPakka518/EmbyProxy-VPS/refs/heads/main/install.sh | bash -s uninstall`）
+
+执行后会先问一句确认，输入 `y` 回车才真正删除，误输入或回车直接取消，不会动任何东西。卸载后想重装，再跑一次安装命令即可。
+
+
 ### 方式二：手动部署（可选）
 
 不想用脚本的话，按下面四步手动来。
