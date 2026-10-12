@@ -596,6 +596,7 @@ function checkWatchAlerts() {
         pushWatchAlert(it.prefix, txt);
         console.log('[watch-alert] ' + txt);
         if (config.tgToken && config.tgChatId && config.tgNotify !== false) tgSend('⚠️ ' + txt);
+        if (config.barkKey && config.barkNotify !== false) barkSend('⚠️ ' + txt);
       }
     } else if (config.watchAlerted[it.prefix]) {
       delete config.watchAlerted[it.prefix];
@@ -623,6 +624,27 @@ async function tgSend(text) {
   if (!config.tgToken || !config.tgChatId) return;
   try {
     await tgCall('sendMessage', { chat_id: String(config.tgChatId), text: String(text).slice(0, 3800), parse_mode: 'HTML' });
+  } catch (e) {}
+}
+
+/* ==========================================================
+ * Bark 通知：iOS 系统级推送（Bark App 免费 APNs 通道）
+ * ========================================================== */
+async function barkSend(text) {
+  if (!config.barkKey) return;
+  const server = (config.barkServer || 'https://api.day.app').replace(/\/+$/, '');
+  try {
+    await fetch(server + '/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        device_key: String(config.barkKey).trim(),
+        title: 'Emby 反代面板',
+        body: String(text || '').slice(0, 1800),
+        level: config.barkLevel || 'active',
+        sound: config.barkSound || 'default'
+      })
+    });
   } catch (e) {}
 }
 
@@ -793,7 +815,7 @@ async function handleApi(req, res, url) {
   /* ---- 前后端分离配置 ---- */
   if (url.pathname === '/api/config' && req.method === 'GET') {
     if (!needAdmin(url.pathname)) return;
-    return sendJSON(res, 200, { success: true, frontendDomain: config.frontendDomain || '', backendDomain: config.backendDomain || '', networkPreference: config.networkPreference || 'auto', tgToken: config.tgToken ? '已配置' : '', tgChatId: config.tgChatId || '', tgNotify: config.tgNotify !== false });
+    return sendJSON(res, 200, { success: true, frontendDomain: config.frontendDomain || '', backendDomain: config.backendDomain || '', networkPreference: config.networkPreference || 'auto', tgToken: config.tgToken ? '已配置' : '', tgChatId: config.tgChatId || '', tgNotify: config.tgNotify !== false, barkServer: config.barkServer || 'https://api.day.app', barkKey: config.barkKey ? '已配置' : '', barkNotify: config.barkNotify !== false, barkLevel: config.barkLevel || 'active' });
   }
 
   if (url.pathname === '/api/config' && req.method === 'POST') {
@@ -808,8 +830,40 @@ async function handleApi(req, res, url) {
     if (body.tgToken !== undefined) config.tgToken = String(body.tgToken || '').trim();
     if (body.tgChatId !== undefined) config.tgChatId = String(body.tgChatId || '').trim();
     if (body.tgNotify !== undefined) config.tgNotify = !!body.tgNotify;
+    if (body.barkServer !== undefined) config.barkServer = String(body.barkServer || 'https://api.day.app').trim();
+    if (body.barkKey !== undefined) config.barkKey = String(body.barkKey || '').trim();
+    if (body.barkNotify !== undefined) config.barkNotify = !!body.barkNotify;
+    if (body.barkLevel !== undefined) config.barkLevel = ['critical', 'active', 'timeSensitive', 'passive'].includes(body.barkLevel) ? body.barkLevel : 'active';
     persistConfig();
     return sendJSON(res, 200, { success: true });
+  }
+
+  /* ---- 测试通知（bark / tg） ---- */
+  if (url.pathname === '/api/test-notify' && req.method === 'POST') {
+    if (!needAdmin(url.pathname)) return;
+    const body = await readBody(req).then(b => { try { return JSON.parse(b.toString()); } catch (e) { return {}; } });
+    const type = String(body.type || 'bark');
+    const txt = '测试通知：面板通知渠道正常 ✓';
+    if (type === 'bark') {
+      if (!config.barkKey) return sendJSON(res, 400, { success: false, msg: '未配置 Bark Key' });
+      try {
+        const server = (config.barkServer || 'https://api.day.app').replace(/\/+$/, '');
+        const r = await fetch(server + '/push', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_key: String(config.barkKey).trim(), title: 'Emby 反代面板', body: txt + '（观看报警测试）', level: config.barkLevel || 'active', sound: config.barkSound || 'default' })
+        });
+        const j = await r.json().catch(() => null);
+        const code = j && j.code !== undefined ? j.code : r.status;
+        if (code === 200) return sendJSON(res, 200, { success: true, msg: 'Bark 测试通知已发送，请检查手机通知栏' });
+        return sendJSON(res, 500, { success: false, msg: 'Bark 返回: ' + JSON.stringify(j || {}).slice(0, 200) });
+      } catch (e) { return sendJSON(res, 500, { success: false, msg: 'Bark 请求失败: ' + (e.message || e) }); }
+    }
+    if (type === 'tg') {
+      if (!config.tgToken || !config.tgChatId) return sendJSON(res, 400, { success: false, msg: '未配置 Telegram' });
+      await tgSend(txt + '（观看报警测试）');
+      return sendJSON(res, 200, { success: true, msg: 'TG 测试通知已发送' });
+    }
+    return sendJSON(res, 400, { success: false, msg: '未知通知类型' });
   }
 
   /* ---- 统计 ---- */
