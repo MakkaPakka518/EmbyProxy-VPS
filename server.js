@@ -539,8 +539,8 @@ setInterval(() => {
 
 /* ==========================================================
  * 观看倒计时 + 报警提醒（普通版：不自动模拟播放，只监测提醒）
- * 节点可设置观看间隔档位：7 / 14 / 21 天
- * 超过档位天数没有真实观看 → 面板红色报警 + Telegram 推送
+ * 节点可自定义观看间隔天数（0=关闭，任意正数，支持小数）
+ * 超过设定天数没有真实观看 → 面板红色报警 + Telegram 推送
  * 界面实时展示：上次观看 X 天前 · 距逾期还有 X 天X时 / 已逾期 X 天
  * ========================================================== */
 let watchAlerts = []; // 面板内报警记录
@@ -560,7 +560,7 @@ function watchStatus() {
   const out = [];
   const now = Date.now();
   for (const r of routes) {
-    const days = parseInt(r.watchDays || '0', 10) || 0;
+    const days = parseFloat(r.watchDays || '0') || 0;
     const lw = lastWatchOf(r.prefix);
     const item = { prefix: r.prefix, remark: r.remark || '', watchDays: days, lastWatch: lw };
     if (days > 0) {
@@ -738,8 +738,12 @@ async function handleApi(req, res, url) {
       existing.cache_img = body.cache_img !== undefined ? body.cache_img : existing.cache_img;
       if (body.v6 !== undefined) existing.v6 = body.v6;
       if (body.icon !== undefined) existing.icon = body.icon;
-      if (body.watchDays !== undefined) existing.watchDays = ['0', '7', '14', '21'].includes(String(body.watchDays)) ? String(body.watchDays) : existing.watchDays;
+      if (body.watchDays !== undefined) {
+        const wd = String(body.watchDays);
+        existing.watchDays = (/^\d+(\.\d+)?$/.test(wd) && parseFloat(wd) >= 0) ? wd : existing.watchDays;
+      }
     } else {
+      const wd = String(body.watchDays !== undefined ? body.watchDays : '0');
       routes.push({
         prefix,
         target,
@@ -747,7 +751,7 @@ async function handleApi(req, res, url) {
         cache_img: body.cache_img !== undefined ? body.cache_img : true,
         v6: body.v6 || 'auto',
         icon: body.icon || '',
-        watchDays: ['0', '7', '14', '21'].includes(String(body.watchDays)) ? String(body.watchDays) : '0',
+        watchDays: (/^\d+(\.\d+)?$/.test(wd) && parseFloat(wd) >= 0) ? wd : '0',
         sort_order: routes.length + 1,
         createdAt: nowStr(),
       });
