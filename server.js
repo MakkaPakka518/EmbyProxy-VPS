@@ -568,6 +568,7 @@ function watchStatus() {
       const elapsed = last ? Math.round(((now - last) / 86400000) * 10) / 10 : null;
       item.elapsedDays = elapsed;
       item.overdue = !last || elapsed > days;
+      item.warn = !item.overdue && elapsed >= days - 3;
       item.leftMs = last ? (last + days * 86400000 - now) : -1;
       item.leftDays = item.leftMs >= 0 ? Math.round((item.leftMs / 86400000) * 10) / 10 : null;
     }
@@ -584,9 +585,24 @@ function pushWatchAlert(prefix, text) {
 /** 每小时检查：超时未观看 → 报警（每日每节点最多一条）；恢复观看后清除标记 */
 function checkWatchAlerts() {
   if (!config.watchAlerted) config.watchAlerted = {};
+  if (!config.watchWarned) config.watchWarned = {};
   const today = new Date(Date.now() + 8 * 3600000).toISOString().split('T')[0];
   let changed = false;
   for (const it of watchStatus()) {
+    // 提前预警：距设定观看间隔还剩 3 天以内（提前 2-3 天）提醒
+    if (it.watchDays > 0 && it.warn) {
+      if (config.watchWarned[it.prefix] !== today) {
+        config.watchWarned[it.prefix] = today;
+        changed = true;
+        const who = (it.remark ? '「' + it.remark + '」（/' + it.prefix + '）' : '/' + it.prefix);
+        const left = (it.elapsedDays == null ? it.watchDays : Math.max(0, it.watchDays - it.elapsedDays));
+        const txt = '节点 ' + who + ' 已 ' + (it.elapsedDays == null ? '从未观看' : it.elapsedDays + ' 天') + ' 未观看，还有 ' + (Math.round(left * 10) / 10) + ' 天将达到设定的 ' + it.watchDays + ' 天观看下限，请注意保号！';
+        pushWatchAlert(it.prefix, txt);
+        console.log('[watch-warn] ' + txt);
+        if (config.tgToken && config.tgChatId && config.tgNotify !== false) tgSend('⚠️ ' + txt);
+        if (config.barkKey && config.barkNotify !== false) barkSend('⚠️ ' + txt);
+      }
+    }
     if (it.watchDays > 0 && it.overdue) {
       if (config.watchAlerted[it.prefix] !== today) {
         config.watchAlerted[it.prefix] = today;
@@ -598,8 +614,9 @@ function checkWatchAlerts() {
         if (config.tgToken && config.tgChatId && config.tgNotify !== false) tgSend('⚠️ ' + txt);
         if (config.barkKey && config.barkNotify !== false) barkSend('⚠️ ' + txt);
       }
-    } else if (config.watchAlerted[it.prefix]) {
-      delete config.watchAlerted[it.prefix];
+    } else if (config.watchAlerted[it.prefix] || config.watchWarned[it.prefix]) {
+      if (config.watchAlerted[it.prefix]) delete config.watchAlerted[it.prefix];
+      if (config.watchWarned[it.prefix]) delete config.watchWarned[it.prefix];
       changed = true;
     }
   }
