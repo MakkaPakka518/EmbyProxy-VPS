@@ -488,7 +488,11 @@ async function handleProxy(req, res, pathname, search) {
         res.writeHead(status, upstreamHeaders);
         if (upstreamRes.body) {
           for await (const chunk of upstreamRes.body) {
-            res.write(Buffer.from(chunk));
+            countDown(matchedPrefix, chunk.length);
+            // 背压保护：下游（用户端）写不动时等待 drain，避免大文件在 VPS 内存堆积
+            if (!res.write(Buffer.from(chunk))) {
+              await new Promise(r => res.once('drain', r));
+            }
           }
         }
         res.end();
@@ -514,6 +518,114 @@ function sendText(res, code, text) {
 /* ==========================================================
  * 管理 API
  * ========================================================== */
+/* ==========================================================
+ * 实时速率统计：每节点响应下行字节，60 秒环形窗口（每 1 秒滑入一格）
+ * ========================================================== */
+const RATE_WINDOW = 60;
+const rateStats = {};
+function countDown(prefix, n) {
+  if (!prefix || !n) return;
+  if (!rateStats[prefix]) rateStats[prefix] = { down: new Array(RATE_WINDOW).fill(0), cur: 0 };
+  rateStats[prefix].cur += n;
+}
+setInterval(() => {
+  for (const k of Object.keys(rateStats)) {
+    const st = rateStats[k];
+    st.down.push(st.cur);
+    if (st.down.length > RATE_WINDOW) st.down.shift();
+    st.cur = 0;
+  }
+}, 1000).unref();
+
+/* ==========================================================
+ * 观看倒计时 + 报警提醒（普通版：不自动模拟播放，只监测提醒）
+ * 节点可设置观看间隔档位：7 / 14 / 21 天
+ * 超过档位天数没有真实观看 → 面板红色报警 + Telegram 推送
+ * 界面实时展示：上次观看 X 天前 · 距逾期还有 X 天X时 / 已逾期 X 天
+ * ========================================================== */
+let watchAlerts = []; // 面板内报警记录
+
+/** 某节点最近一次真实观看时间（遍历 stats 各天 lastPlay 取最新） */
+function lastWatchOf(prefix) {
+  let latest = '';
+  for (const day of Object.keys(stats)) {
+    const p = stats[day][prefix];
+    if (p && p.lastPlay && (!latest || p.lastPlay > latest)) latest = p.lastPlay;
+  }
+  return latest;
+}
+
+/** 全部节点的观看倒计时状态 */
+function watchStatus() {
+  const out = [];
+  const now = Date.now();
+  for (const r of routes) {
+    const days = parseInt(r.watchDays || '0', 10) || 0;
+    const lw = lastWatchOf(r.prefix);
+    const item = { prefix: r.prefix, remark: r.remark || '', watchDays: days, lastWatch: lw };
+    if (days > 0) {
+      const last = lw ? new Date(lw).getTime() : 0;
+      const elapsed = last ? Math.round(((now - last) / 86400000) * 10) / 10 : null;
+      item.elapsedDays = elapsed;
+      item.overdue = !last || elapsed > days;
+      item.leftMs = last ? (last + days * 86400000 - now) : -1;
+      item.leftDays = item.leftMs >= 0 ? Math.round((item.leftMs / 86400000) * 10) / 10 : null;
+    }
+    out.push(item);
+  }
+  return out;
+}
+
+function pushWatchAlert(prefix, text) {
+  watchAlerts.unshift({ time: Date.now(), prefix: String(prefix || ''), detail: String(text || '').slice(0, 220) });
+  if (watchAlerts.length > 30) watchAlerts.length = 30;
+}
+
+/** 每小时检查：超时未观看 → 报警（每日每节点最多一条）；恢复观看后清除标记 */
+function checkWatchAlerts() {
+  if (!config.watchAlerted) config.watchAlerted = {};
+  const today = new Date(Date.now() + 8 * 3600000).toISOString().split('T')[0];
+  let changed = false;
+  for (const it of watchStatus()) {
+    if (it.watchDays > 0 && it.overdue) {
+      if (config.watchAlerted[it.prefix] !== today) {
+        config.watchAlerted[it.prefix] = today;
+        changed = true;
+        const who = (it.remark ? '「' + it.remark + '」（/' + it.prefix + '）' : '/' + it.prefix);
+        const txt = '节点 ' + who + ' 已 ' + (it.elapsedDays == null ? '从未观看' : it.elapsedDays + ' 天') + ' 未观看，超过设定的 ' + it.watchDays + ' 天，请注意保号！';
+        pushWatchAlert(it.prefix, txt);
+        console.log('[watch-alert] ' + txt);
+        if (config.tgToken && config.tgChatId && config.tgNotify !== false) tgSend('⚠️ ' + txt);
+      }
+    } else if (config.watchAlerted[it.prefix]) {
+      delete config.watchAlerted[it.prefix];
+      changed = true;
+    }
+  }
+  if (changed) persistConfig();
+}
+checkWatchAlerts(); // 启动即检查一次（记录当前状态基线）
+setInterval(checkWatchAlerts, 3600000).unref();
+
+/* ==========================================================
+ * Telegram 报警推送（普通版仅推送，不含 Bot 命令轮询）
+ * ========================================================== */
+async function tgCall(method, payload) {
+  if (!config.tgToken) return null;
+  try {
+    const r = await fetch('https://api.telegram.org/bot' + config.tgToken + '/' + method, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+    return await r.json();
+  } catch (e) { return null; }
+}
+async function tgSend(text) {
+  if (!config.tgToken || !config.tgChatId) return;
+  try {
+    await tgCall('sendMessage', { chat_id: String(config.tgChatId), text: String(text).slice(0, 3800), parse_mode: 'HTML' });
+  } catch (e) {}
+}
+
 async function handleApi(req, res, url) {
   const role = getRole(req);
   const needAdmin = (pathname) => {
@@ -587,6 +699,7 @@ async function handleApi(req, res, url) {
       existing.cache_img = body.cache_img !== undefined ? body.cache_img : existing.cache_img;
       if (body.v6 !== undefined) existing.v6 = body.v6;
       if (body.icon !== undefined) existing.icon = body.icon;
+      if (body.watchDays !== undefined) existing.watchDays = ['0', '7', '14', '21'].includes(String(body.watchDays)) ? String(body.watchDays) : existing.watchDays;
     } else {
       routes.push({
         prefix,
@@ -595,6 +708,7 @@ async function handleApi(req, res, url) {
         cache_img: body.cache_img !== undefined ? body.cache_img : true,
         v6: body.v6 || 'auto',
         icon: body.icon || '',
+        watchDays: ['0', '7', '14', '21'].includes(String(body.watchDays)) ? String(body.watchDays) : '0',
         sort_order: routes.length + 1,
         createdAt: nowStr(),
       });
@@ -679,7 +793,7 @@ async function handleApi(req, res, url) {
   /* ---- 前后端分离配置 ---- */
   if (url.pathname === '/api/config' && req.method === 'GET') {
     if (!needAdmin(url.pathname)) return;
-    return sendJSON(res, 200, { success: true, frontendDomain: config.frontendDomain || '', backendDomain: config.backendDomain || '', networkPreference: config.networkPreference || 'auto' });
+    return sendJSON(res, 200, { success: true, frontendDomain: config.frontendDomain || '', backendDomain: config.backendDomain || '', networkPreference: config.networkPreference || 'auto', tgToken: config.tgToken ? '已配置' : '', tgChatId: config.tgChatId || '', tgNotify: config.tgNotify !== false });
   }
 
   if (url.pathname === '/api/config' && req.method === 'POST') {
@@ -691,6 +805,9 @@ async function handleApi(req, res, url) {
       config.networkPreference = ['auto', 'v6', 'v4'].includes(body.networkPreference) ? body.networkPreference : 'auto';
       applyIpv6Policy();
     }
+    if (body.tgToken !== undefined) config.tgToken = String(body.tgToken || '').trim();
+    if (body.tgChatId !== undefined) config.tgChatId = String(body.tgChatId || '').trim();
+    if (body.tgNotify !== undefined) config.tgNotify = !!body.tgNotify;
     persistConfig();
     return sendJSON(res, 200, { success: true });
   }
@@ -738,6 +855,20 @@ async function handleApi(req, res, url) {
     const n = cacheStore.size;
     cacheStore.clear();
     return sendJSON(res, 200, { success: true, cleared: n });
+  }
+
+  /* ---- 实时速率（60s 环形窗口） ---- */
+  if (url.pathname === '/api/rates' && req.method === 'GET') {
+    if (!needAdmin(url.pathname)) return;
+    const out = {};
+    for (const k of Object.keys(rateStats)) out[k] = { down: rateStats[k].down.slice() };
+    return sendJSON(res, 200, { success: true, rates: out });
+  }
+
+  /* ---- 观看倒计时（每节点最近观看时间 / 差多久没观看 / 报警记录） ---- */
+  if (url.pathname === '/api/watch/status' && req.method === 'GET') {
+    if (!needAdmin(url.pathname)) return;
+    return sendJSON(res, 200, { success: true, items: watchStatus(), alerts: watchAlerts });
   }
 
   return sendJSON(res, 404, { success: false, error: 'Not Found' });
