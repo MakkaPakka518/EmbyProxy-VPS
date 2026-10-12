@@ -342,6 +342,36 @@
                     <span class="switch on" id="cfgTgNotify" onclick="this.classList.toggle('on')"></span> 报警推送
                 </label>
             </div>
+            <div style="border-top:1px dashed var(--border); margin-top:16px; padding-top:14px;">
+                <h3 style="margin:0 0 10px; font-size:15px;">iOS 系统通知（Bark）</h3>
+                <div style="font-size:13px;color:var(--text-sec);margin-bottom:14px;line-height:1.7;">手机 App Store 免费安装 <b>Bark</b>，复制设备 Key 填到下面，观看倒计时报警会推送到 iOS 通知栏（无需开发者账号）。</div>
+                <div class="row2" style="margin-bottom:14px;">
+                    <div class="field">
+                        <label>Bark 设备 Key</label>
+                        <input id="cfgBarkKey" placeholder="粘贴 Bark 设备 Key（留空不修改）">
+                    </div>
+                    <div class="field">
+                        <label>推送级别</label>
+                        <select id="cfgBarkLevel">
+                            <option value="active">active（常规）</option>
+                            <option value="timeSensitive">timeSensitive（时效）</option>
+                            <option value="critical">critical（强提醒）</option>
+                            <option value="passive">passive（静默）</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field" style="margin-bottom:14px;">
+                    <label>Bark 服务地址（默认官方 api.day.app，自建才改）</label>
+                    <input id="cfgBarkServer" placeholder="https://api.day.app">
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                    <label class="switch-label" style="margin:0;">
+                        <span class="switch on" id="cfgBarkNotify" onclick="this.classList.toggle('on')"></span> 报警推送
+                    </label>
+                    <button class="btn-ghost" onclick="testNotify('bark')">测试 Bark</button>
+                    <button class="btn-ghost" onclick="testNotify('tg')">测试 Telegram</button>
+                </div>
+            </div>
             <button class="btn-submit" onclick="saveConfig()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg> 保存反代配置</button>
         </div>
 
@@ -743,7 +773,7 @@ function confetti(kind) {
 
 /* ============ 反代配置（前后端分离） ============ */
 async function loadConfig() {
-  if (role !== 'admin') { $('cfgFrontend').value = ''; $('cfgBackend').value = ''; $('cfgNetPref').value = 'auto'; $('cfgTgToken').value = ''; $('cfgTgChatId').value = ''; $('cfgTgNotify').classList.add('on'); return; }
+  if (role !== 'admin') { $('cfgFrontend').value = ''; $('cfgBackend').value = ''; $('cfgNetPref').value = 'auto'; $('cfgTgToken').value = ''; $('cfgTgChatId').value = ''; $('cfgTgNotify').classList.add('on'); $('cfgBarkKey').value = ''; $('cfgBarkServer').value = 'https://api.day.app'; $('cfgBarkLevel').value = 'active'; $('cfgBarkNotify').classList.add('on'); return; }
   try {
     const data = await api('/api/config');
     $('cfgFrontend').value = data.frontendDomain || '';
@@ -753,13 +783,29 @@ async function loadConfig() {
     $('cfgTgToken').placeholder = data.tgToken ? '已配置（留空保持）' : '@BotFather 创建获取';
     $('cfgTgChatId').value = data.tgChatId || '';
     $('cfgTgNotify').classList.toggle('on', data.tgNotify !== false);
+    $('cfgBarkKey').value = '';
+    $('cfgBarkKey').placeholder = data.barkKey ? '已配置（留空保持）' : '粘贴 Bark 设备 Key（留空不修改）';
+    $('cfgBarkServer').value = data.barkServer || 'https://api.day.app';
+    $('cfgBarkLevel').value = ['active', 'timeSensitive', 'critical', 'passive'].includes(data.barkLevel) ? data.barkLevel : 'active';
+    $('cfgBarkNotify').classList.toggle('on', data.barkNotify !== false);
   } catch (e) {}
+}
+
+async function testNotify(type) {
+  if (role !== 'admin') return toast(I.warn + ' 仅管理员可操作');
+  try {
+    const r = await api('/api/test-notify', { method: 'POST', body: JSON.stringify({ type }) });
+    toast(r.success ? I.check + ' ' + (r.msg || '已发送') : I.warn + ' ' + (r.msg || '发送失败'));
+  } catch (e) { toast(I.warn + ' 测试请求失败'); }
 }
 
 async function saveConfig() {
   if (role !== 'admin') return toast(I.warn + ' 仅管理员可操作');
   try {
-    await api('/api/config', { method: 'POST', body: JSON.stringify({ frontendDomain: $('cfgFrontend').value.trim(), backendDomain: $('cfgBackend').value.trim(), networkPreference: $('cfgNetPref').value, tgToken: $('cfgTgToken').value.trim(), tgChatId: $('cfgTgChatId').value.trim(), tgNotify: $('cfgTgNotify').classList.contains('on') }) });
+    const payload = { frontendDomain: $('cfgFrontend').value.trim(), backendDomain: $('cfgBackend').value.trim(), networkPreference: $('cfgNetPref').value, tgToken: $('cfgTgToken').value.trim(), tgChatId: $('cfgTgChatId').value.trim(), tgNotify: $('cfgTgNotify').classList.contains('on'), barkServer: $('cfgBarkServer').value.trim(), barkNotify: $('cfgBarkNotify').classList.contains('on'), barkLevel: $('cfgBarkLevel').value };
+    const bk = $('cfgBarkKey').value.trim();
+    if (bk && !bk.startsWith('已配置')) payload.barkKey = bk;
+    await api('/api/config', { method: 'POST', body: JSON.stringify(payload) });
     toast(I.check + ' 反代配置已保存');
   } catch (e) { toast(I.warn + ' 保存失败'); }
 }
