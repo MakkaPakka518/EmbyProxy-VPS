@@ -470,13 +470,8 @@
             </div>
             <div class="field" style="margin-bottom:12px;">
                 <label>观看倒计时（保号提醒）</label>
-                <select id="rtWatchDays">
-                    <option value="0">关闭</option>
-                    <option value="7">7 天</option>
-                    <option value="14">14 天</option>
-                    <option value="21">21 天</option>
-                </select>
-                <div style="font-size:12px;color:var(--text-sec);margin-top:6px;">节点超过该间隔没有真实观看即报警提醒（面板 + Telegram）。开启后节点卡片实时显示上次观看与剩余天数。</div>
+                <input type="number" id="rtWatchDays" min="0" step="1" placeholder="0 = 关闭，如 21 表示 21 天">
+                <div style="font-size:12px;color:var(--text-sec);margin-top:6px;">输入任意天数（0 = 关闭，可填小数如 14.5）。节点超过该间隔没有真实观看即报警提醒（面板 + Telegram + Bark）。开启后节点卡片实时显示上次观看与剩余天数。</div>
             </div>
             <label class="switch-label">
                 <span class="switch" id="rtCache" onclick="this.classList.toggle('on')"></span> 开启海报及静态资源缓存
@@ -1040,7 +1035,7 @@ function openNodeModal(prefix) {
       $('rtNetPref').value = r.v6 || 'auto';
       $('rtCache').classList.toggle('on', !!r.cache_img);
       selectedIcon = r.icon || '';
-      $('rtWatchDays').value = ['7', '14', '21'].includes(String(r.watchDays)) ? String(r.watchDays) : '0';
+      $('rtWatchDays').value = (r.watchDays && r.watchDays != '0') ? String(r.watchDays) : '';
       if (selectedIcon) $('rtIconSearch').value = selectedIcon;
       renderIconGrid($('rtIconSearch').value);
       const targets = r.target.split(',').map(s => s.trim()).filter(Boolean);
