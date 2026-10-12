@@ -169,6 +169,12 @@
     .stat-cell .lbl { font-size: 11px; color: var(--text-sec); margin-top: 4px; }
     .empty { text-align: center; color: var(--text-sec); font-size: 13px; padding: 20px 0; }
 
+    .cfg-collapse { padding: 14px 16px; }
+    .cfg-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; user-select: none; }
+    .cfg-arrow { font-size: 16px; color: var(--text-sec); transition: transform .25s ease; display: inline-block; }
+    .acc-tab { flex:1; padding:10px 0; border:1px solid var(--border); border-radius:10px; background:var(--bg); color:var(--text-sec); font-size:13px; font-weight:600; cursor:pointer; transition:all .2s; }
+    .acc-tab.on { background:var(--primary); color:#fff; border-color:var(--primary); }
+
     /* 订阅者列表 */
     .sub-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); margin-bottom: 8px; }
     .sub-item .sub-pw { font-weight: 600; font-size: 13px; font-family: monospace; }
@@ -284,7 +290,6 @@
         </div>
         <div class="topbar-right">
             <button class="pill-btn" onclick="showStats()" title="查看今日播放统计"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg> 统计</button>
-            <button class="pill-btn" onclick="openAccount()" title="账户设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.2 4.2l2.8 2.8M17 17l2.8 2.8M1 12h4M19 12h4M4.2 19.8L7 17M17 7l2.8-2.8"/></svg> 账户</button>
             <button class="pill-close" onclick="confirmLogout()" title="退出系统"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </div>
     </div>
@@ -302,9 +307,13 @@
             </div>
         </div>
 
-        <!-- 通知设置（Bark · iOS 系统通知）- 独立卡片 -->
-        <div class="card">
-            <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-9.9 4.6c0 2.6 1.8 4.4 1.8 5.4a2.4 2.4 0 1 0 4.8 0c0-1 .4-1.6 .4-2.2"/><circle cx="12" cy="4.5" r="1.5"/><path d="M19 15c0 1.5 1 2 1 3.5 0 1.5-1 2.5-2.5 2.5a5 5 0 0 1-5-5"/></svg> 通知设置（Bark · iOS 系统通知）</h2>
+        <!-- 通知设置（Bark · iOS 系统通知）- 默认折叠，点击展开 -->
+        <div class="card cfg-collapse">
+            <div class="cfg-head" onclick="toggleNotify()">
+                <h2 style="margin:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-9.9 4.6c0 2.6 1.8 4.4 1.8 5.4a2.4 2.4 0 1 0 4.8 0c0-1 .4-1.6 .4-2.2"/><circle cx="12" cy="4.5" r="1.5"/><path d="M19 15c0 1.5 1 2 1 3.5 0 1.5-1 2.5-2.5 2.5a5 5 0 0 1-5-5"/></svg> 通知设置（Bark · iOS 系统通知）</h2>
+                <span class="cfg-arrow" id="notifyArrow">▸</span>
+            </div>
+            <div id="notifyBody" style="display:none; margin-top:14px; border-top:1px dashed var(--border); padding-top:14px;">
             <div style="font-size:13px;color:var(--text-sec);margin-bottom:14px;line-height:1.6;">手机 App Store 免费安装 <b>Bark</b>，复制设备 Key 填到下面，观看倒计时报警会推送到 iOS 通知栏（无需开发者账号）。</div>
             <div class="row2" style="margin-bottom:14px;">
                 <div class="field">
@@ -333,6 +342,7 @@
                 <button class="btn-ghost" onclick="testNotify('bark', true)">60 秒后测试通知</button>
                 <button class="btn-ghost" onclick="testNotify('tg')">测试 Telegram</button>
                 <button class="btn-submit" onclick="saveNotify()" style="margin-left:auto;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg> 保存通知设置</button>
+            </div>
             </div>
         </div>
 
@@ -396,17 +406,6 @@
             <div id="nodeGrid" class="node-grid">
                 <div class="empty" style="grid-column:1/-1;">加载节点中...</div>
             </div>
-        </div>
-
-        <!-- 订阅者 -->
-        <div class="card" id="subCard">
-            <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 8V4M8 4h8"/><circle cx="9.5" cy="13" r="1" fill="currentColor"/><circle cx="14.5" cy="13" r="1" fill="currentColor"/><path d="M2 13v3M22 13v3"/></svg> 订阅者管理</h2>
-            <div style="font-size:13px;color:var(--text-sec);margin-bottom:14px;">订阅者可用订阅密码登录面板（只读），适合分享给朋友。</div>
-            <div style="display:flex; gap:10px; margin-bottom:12px;">
-                <input id="subInput" placeholder="输入订阅密码" style="flex:1; padding:11px 14px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:14px;">
-                <button class="btn-submit" onclick="addSub()" style="padding:11px 18px;">添加</button>
-            </div>
-            <div id="subList"></div>
         </div>
 
         <!-- 今日统计 -->
@@ -489,23 +488,37 @@
 
 <!-- ==================== 账户 Modal ==================== -->
 <div id="accountModal" class="modal-mask">
-    <div class="modal-box" style="max-width:420px;">
+    <div class="modal-box" style="max-width:460px;">
         <div class="modal-head">
             <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.2 4.2l2.8 2.8M17 17l2.8 2.8M1 12h4M19 12h4M4.2 19.8L7 17M17 7l2.8-2.8"/></svg> 账户设置</h2>
             <button class="modal-close" onclick="closeAccount()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </div>
-        <div id="accRole" style="font-size:13px; color:var(--text-sec); margin-bottom:14px;">当前角色：加载中</div>
-        <div class="field" style="margin-bottom:16px;">
-            <label>修改网页登录密码（留空则保持原密码登录）</label>
-            <input type="password" id="newPass" placeholder="新密码（至少 4 位）">
+        <div style="display:flex; gap:8px; margin-bottom:16px; border-bottom:1px solid var(--border); padding-bottom:12px;">
+            <button class="acc-tab on" id="accTabMe" onclick="switchAccTab('me')">我</button>
+            <button class="acc-tab" id="accTabSub" onclick="switchAccTab('sub')">订阅者管理</button>
         </div>
-        <div style="display:flex; gap:10px; justify-content:flex-end;">
-            <button class="btn-ghost" onclick="closeAccount()">取消</button>
-            <button class="btn-submit" onclick="savePass()">保存密码</button>
+        <div id="accTabMeBody">
+            <div id="accRole" style="font-size:13px; color:var(--text-sec); margin-bottom:14px;">当前角色：加载中</div>
+            <div class="field" style="margin-bottom:16px;">
+                <label>修改网页登录密码（留空则保持原密码登录）</label>
+                <input type="password" id="newPass" placeholder="新密码（至少 4 位）">
+            </div>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button class="btn-ghost" onclick="closeAccount()">取消</button>
+                <button class="btn-submit" onclick="savePass()">保存密码</button>
+            </div>
+            <div style="border-top:1px dashed var(--border); margin-top:18px; padding-top:14px; display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:13px; color:var(--text-sec);">退出当前登录</span>
+                <button class="btn-danger" onclick="confirmLogout()" style="padding:8px 16px; font-size:13px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg> 退出</button>
+            </div>
         </div>
-        <div style="border-top:1px dashed var(--border); margin-top:18px; padding-top:14px; display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-size:13px; color:var(--text-sec);">退出当前登录</span>
-            <button class="btn-danger" onclick="confirmLogout()" style="padding:8px 16px; font-size:13px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg> 退出</button>
+        <div id="accTabSubBody" style="display:none;">
+            <div style="font-size:13px;color:var(--text-sec);margin-bottom:12px;">订阅者可用订阅密码登录面板（只读），适合分享给朋友。</div>
+            <div style="display:flex; gap:10px; margin-bottom:12px;">
+                <input id="subInput" placeholder="输入订阅密码" style="flex:1; padding:11px 14px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:14px;">
+                <button class="btn-submit" onclick="addSub()" style="padding:11px 18px;">添加</button>
+            </div>
+            <div id="subList"></div>
         </div>
     </div>
 </div>
@@ -1207,8 +1220,25 @@ async function loadStats() {
 function showStats() { loadStats(); document.getElementById('statsGrid').scrollIntoView({ behavior: 'smooth' }); }
 
 /* ============ 账户（修复：弹窗显示） ============ */
+function toggleNotify() {
+    const body = $('notifyBody'), arrow = $('notifyArrow');
+    const open = body.style.display !== 'none';
+    body.style.display = open ? 'none' : 'block';
+    arrow.style.transform = open ? 'rotate(0deg)' : 'rotate(90deg)';
+}
+
+function switchAccTab(tab) {
+    const me = tab === 'me';
+    $('accTabMe').classList.toggle('on', me);
+    $('accTabSub').classList.toggle('on', !me);
+    $('accTabMeBody').style.display = me ? 'block' : 'none';
+    $('accTabSubBody').style.display = me ? 'none' : 'block';
+    if (!me) loadSubs();
+}
+
 function openAccount() {
   if (role) $('accRole').textContent = '当前角色：' + (role === 'admin' ? '管理员' : '订阅者');
+  switchAccTab('me');
   $('accountModal').style.display = 'flex';
 }
 function closeAccount() {
