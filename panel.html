@@ -17,15 +17,46 @@
         --radius-card: 16px;
     }
 
+    /* 暗色模式：科幻风（深空蓝紫渐变 + 玻璃卡片） */
     body.dark {
-        --primary: #0a84ff;
-        --primary-hover: #0071e3;
-        --bg: #000000;
-        --card: #1c1c1e;
-        --text: #f5f5f7;
-        --text-sec: #98989d;
-        --border: #38383a;
+        --primary: #38bdf8;
+        --primary-hover: #818cf8;
+        --bg: #0a0f1f;
+        --card: rgba(255,255,255,.045);
+        --text: #e6ecf5;
+        --text-sec: #8ea0bd;
+        --border: rgba(255,255,255,.12);
+        --radius-card: 16px;
     }
+    body.dark {
+        background:
+            radial-gradient(1200px 700px at 85% -10%, rgba(129,140,248,.22), transparent 55%),
+            radial-gradient(900px 600px at -10% 30%, rgba(56,189,248,.14), transparent 50%),
+            linear-gradient(165deg, #0a0f1f 0%, #111a35 55%, #1a1140 100%);
+        background-attachment: fixed;
+    }
+    body.dark .card, body.dark .emby-card, body.dark .table-wrapper {
+        background: rgba(255,255,255,.045);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        border: 1px solid rgba(255,255,255,.09);
+        box-shadow: 0 8px 28px rgba(2,6,18,.35);
+    }
+    body.dark .emby-card:hover { box-shadow: 0 10px 34px rgba(129,140,248,.16); transform: translateY(-2px); }
+    body.dark input, body.dark select, body.dark textarea {
+        background: rgba(255,255,255,.055);
+        color: #e6ecf5;
+        border: 1px solid rgba(255,255,255,.12);
+    }
+    body.dark input:focus, body.dark select:focus, body.dark textarea:focus {
+        border-color: #818cf8;
+        box-shadow: 0 0 0 3px rgba(129,140,248,.15);
+    }
+    body.dark .chart-wrap, body.dark .icon-grid { background: rgba(255,255,255,.035); border-color: rgba(255,255,255,.1); }
+    body.dark th { background: rgba(255,255,255,.04); }
+    body.dark tr:hover td { background: rgba(255,255,255,.03); }
+    body.dark .search-input, body.dark .action-group { background: rgba(255,255,255,.04); }
+    body.dark .ping-badge { background: rgba(255,255,255,.05); color: var(--text-sec); }
 
     * { box-sizing: border-box; touch-action: manipulation; }
     body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; -webkit-text-size-adjust: 100%; transition: background-color 0.3s, color 0.3s; }
@@ -76,7 +107,7 @@
     .btn-dns:hover { background: rgba(52,199,89,.08); }
     .btn-dns svg { width: 15px; height: 15px; }
 
-    body.dark input, body.dark select, body.dark textarea { background: #1c1c1e; color: #f5f5f7; border: 1px solid #38383a; }
+    /* 暗色输入框规则已在上方 body.dark 覆盖块内定义 */
 
     .search-input { padding: 10px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 14px; width: 260px; transition: 0.3s; }
 
@@ -259,6 +290,18 @@
     </div>
 
     <div class="container">
+        <!-- 实时速率仪表盘 -->
+        <div class="card" id="rateCard" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+                <h2 style="margin:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3v6M21 3h-6M3 21v-6M3 21h6"/><path d="M21 8l-6-6M3 16l6 6"/></svg> 实时速率</h2>
+                <span id="rateTotal" style="font-size:15px;font-weight:600;color:var(--primary);">--</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:16px; margin-top:12px; flex-wrap:wrap;">
+                <canvas id="rateChart" width="300" height="60" style="flex:1; min-width:220px; max-width:460px; background:var(--bg); border-radius:10px;"></canvas>
+                <div id="rateNodes" style="font-size:12px; color:var(--text-sec); flex:1; min-width:180px; line-height:1.9;"></div>
+            </div>
+        </div>
+
         <!-- 反代配置（前后端分离） -->
         <div class="card">
             <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 1 1 0-8 5 5 0 0 1 9.6 1.3A3.5 3.5 0 0 1 17 18H7z"/></svg> 反代配置（前后端分离）</h2>
@@ -281,6 +324,23 @@
                     <option value="v4">全局优先 IPv4</option>
                 </select>
                 <div style="font-size:12px;color:var(--text-sec);margin-top:6px;">IPv6 优先适合纯 IPv6 / 双栈机器且源站支持 IPv6 的场景；目标无对应地址族时自动回退。单个节点可在「反代节点 → 编辑」中单独覆盖。</div>
+            </div>
+            <div style="border-top:1px dashed var(--border); margin-top:16px; padding-top:14px;">
+                <h3 style="margin:0 0 10px; font-size:15px;">观看倒计时报警推送（Telegram）</h3>
+                <div style="font-size:13px;color:var(--text-sec);margin-bottom:14px;line-height:1.7;">节点超过设定的观看间隔（7/14/21 天）没有真实观看时，面板内红色报警，同时可推送 Telegram 提醒。</div>
+                <div class="row2" style="margin-bottom:14px;">
+                    <div class="field">
+                        <label>Bot Token</label>
+                        <input id="cfgTgToken" placeholder="@BotFather 创建获取（留空关闭推送）">
+                    </div>
+                    <div class="field">
+                        <label>管理员 Chat ID</label>
+                        <input id="cfgTgChatId" placeholder="向 @userinfobot 发 /start 获取">
+                    </div>
+                </div>
+                <label class="switch-label" style="margin-bottom:14px;">
+                    <span class="switch on" id="cfgTgNotify" onclick="this.classList.toggle('on')"></span> 报警推送
+                </label>
             </div>
             <button class="btn-submit" onclick="saveConfig()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg> 保存反代配置</button>
         </div>
@@ -374,6 +434,16 @@
                 <div style="font-size:14px; font-weight:600; color:var(--text-sec); margin-bottom:10px;">服务器线路配置（支持魔改分离版推流，支持多条备用线路）</div>
                 <div id="targetInputs" style="display:flex; flex-direction:column; gap:10px;"></div>
                 <button type="button" class="btn-ghost" onclick="addTargetRow()" style="margin-top:8px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> 添加备用线路</button>
+            </div>
+            <div class="field" style="margin-bottom:12px;">
+                <label>观看倒计时（保号提醒）</label>
+                <select id="rtWatchDays">
+                    <option value="0">关闭</option>
+                    <option value="7">7 天</option>
+                    <option value="14">14 天</option>
+                    <option value="21">21 天</option>
+                </select>
+                <div style="font-size:12px;color:var(--text-sec);margin-top:6px;">节点超过该间隔没有真实观看即报警提醒（面板 + Telegram）。开启后节点卡片实时显示上次观看与剩余天数。</div>
             </div>
             <label class="switch-label">
                 <span class="switch" id="rtCache" onclick="this.classList.toggle('on')"></span> 开启海报及静态资源缓存
@@ -508,6 +578,8 @@ function enterPanel() {
   $('topbarLogo').src = 'https://raw.githubusercontent.com/MakkaPakka518/Icon/refs/heads/main/MAKKA_EMBY.JPG';
   $('accRole').textContent = '当前角色：' + (role === 'admin' ? '管理员' : '订阅者');
   loadAll();
+  startRatePoll();
+  startWatchPoll();
 }
 
 async function init() {
@@ -536,21 +608,158 @@ async function updateRTT() {
   }
 }
 
+/* ============ 观看倒计时（保号提醒） ============ */
+let watchTimer = null;
+let watchSeenAlerts = {};
+function fmtLeft(ms) {
+  if (ms < 0) return '0';
+  const h = Math.floor(ms / 3600000);
+  const d = Math.floor(h / 24);
+  if (d > 0) return d + ' 天 ' + (h % 24) + ' 时';
+  if (h > 0) return h + ' 时 ' + Math.floor((ms % 3600000) / 60000) + ' 分';
+  return Math.floor(ms / 60000) + ' 分';
+}
+function watchBadgeHtml(it) {
+  if (!it || !it.watchDays) return '<span style="color:var(--text-sec);">未开启</span>';
+  if (it.overdue) {
+    const over = it.elapsedDays == null ? '从未观看' : '已逾期 ' + (Math.round((it.elapsedDays - it.watchDays) * 10) / 10) + ' 天';
+    return '<span style="color:#ff3b30;font-weight:700;">⚠ ' + over + '</span>';
+  }
+  return '<span style="color:var(--text-sec);">上次 ' + (it.elapsedDays == null ? '从未' : it.elapsedDays + ' 天前') + '</span> · <span style="color:#34c759;">距 ' + it.watchDays + ' 天还有 ' + fmtLeft(it.leftMs) + '</span>';
+}
+function startWatchPoll() {
+  if (role !== 'admin') return;
+  if (watchTimer) clearInterval(watchTimer);
+  const tick = async () => {
+    try {
+      const d = await api('/api/watch/status');
+      const items = d.items || [];
+      for (const it of items) {
+        const el = document.querySelector('.watch-badge[data-watch="' + CSS.escape(it.prefix) + '"]');
+        if (el) el.innerHTML = watchBadgeHtml(it);
+      }
+      // 新报警 toast 提示
+      const alerts = d.alerts || [];
+      for (const a of alerts) {
+        if (!watchSeenAlerts[a.time]) {
+          watchSeenAlerts[a.time] = true;
+          toast('<span style="color:#ff3b30;font-weight:600;">⚠</span> ' + a.detail);
+        }
+      }
+      const keys = Object.keys(watchSeenAlerts).sort();
+      while (keys.length > 30) delete watchSeenAlerts[keys.shift()];
+    } catch (e) {}
+  };
+  tick();
+  watchTimer = setInterval(tick, 30000);
+}
+
+/* ============ 实时速率仪表盘 ============ */
+let rateTimer = null;
+function fmtRate(b) {
+  if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB/s';
+  if (b >= 1024) return (b / 1024).toFixed(0) + ' KB/s';
+  return b + ' B/s';
+}
+function startRatePoll() {
+  if (role !== 'admin') return;
+  const card = $('rateCard'); if (card) card.style.display = '';
+  if (rateTimer) clearInterval(rateTimer);
+  const tick = async () => {
+    try {
+      const d = await api('/api/rates');
+      const rates = d.rates || {};
+      const prefixes = Object.keys(rates);
+      const cv = $('rateChart'), ctx = cv.getContext('2d');
+      const W = cv.width = cv.clientWidth * 2 || 600, H = cv.height = 60 * 2;
+      ctx.clearRect(0, 0, W, H);
+      let total = 0;
+      const lines = prefixes.map(p => {
+        const arr = rates[p].down || [];
+        const last = arr.length ? arr[arr.length - 1] : 0;
+        total += last;
+        return '<b>/' + p + '</b> ' + fmtRate(last);
+      });
+      $('rateTotal').textContent = '总下行 ' + fmtRate(total);
+      $('rateNodes').innerHTML = lines.join('&nbsp;&nbsp;') || '<span style="color:var(--text-sec);">暂无流量</span>';
+      const series = new Array(60).fill(0);
+      for (const p of prefixes) {
+        const arr = rates[p].down || [];
+        for (let i = 0; i < Math.min(60, arr.length); i++) series[i] += arr[i] || 0;
+      }
+      const max = Math.max.apply(null, series.concat([1]));
+      ctx.strokeStyle = '#0071e3'; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.beginPath();
+      for (let i = 0; i < 60; i++) {
+        const x = (i / 59) * W, y = H - (series[i] / max) * (H - 10) - 5;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    } catch (e) {}
+  };
+  tick();
+  rateTimer = setInterval(tick, 2000);
+}
+
+/* ============ 部署彩蛋动画（成功：彩色粒子；失败：红色警示粒子） ============ */
+function confetti(kind) {
+  const cv = document.createElement('canvas');
+  cv.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:99999;';
+  document.body.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  const W = cv.width = innerWidth, H = cv.height = innerHeight;
+  const colors = kind === 'ok'
+    ? ['#ff5f6d', '#ffc371', '#36d1dc', '#5b86e5', '#00c9a7', '#f7971e', '#a8e063']
+    : ['#ff3b30', '#ff6b6b', '#c0392b', '#e74c3c', '#ff8a80'];
+  const ps = [];
+  const N = kind === 'ok' ? 140 : 90;
+  const cx = W / 2, cy = H * 0.32;
+  for (let i = 0; i < N; i++) ps.push({
+    x: cx + (Math.random() - 0.5) * 240, y: cy + (Math.random() - 0.5) * 140,
+    vx: (Math.random() - 0.5) * 14, vy: -5 - Math.random() * 11,
+    g: 0.32 + Math.random() * 0.3, s: 4 + Math.random() * 7,
+    r: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 0.3,
+    color: colors[(Math.random() * colors.length) | 0], life: 1
+  });
+  let frames = 0;
+  (function loop() {
+    frames++;
+    ctx.clearRect(0, 0, W, H);
+    let alive = 0;
+    for (const p of ps) {
+      if (p.life <= 0) continue;
+      p.x += p.vx; p.y += p.vy; p.vy += p.g; p.r += p.vr; p.life -= 0.008;
+      alive++;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * 0.6);
+      ctx.restore();
+    }
+    if (alive > 0 && frames < 240) requestAnimationFrame(loop);
+    else { try { cv.remove(); } catch (e) {} }
+  })();
+  setTimeout(() => { try { cv.remove(); } catch (e) {} }, 3800);
+}
+
 /* ============ 反代配置（前后端分离） ============ */
 async function loadConfig() {
-  if (role !== 'admin') { $('cfgFrontend').value = ''; $('cfgBackend').value = ''; $('cfgNetPref').value = 'auto'; return; }
+  if (role !== 'admin') { $('cfgFrontend').value = ''; $('cfgBackend').value = ''; $('cfgNetPref').value = 'auto'; $('cfgTgToken').value = ''; $('cfgTgChatId').value = ''; $('cfgTgNotify').classList.add('on'); return; }
   try {
     const data = await api('/api/config');
     $('cfgFrontend').value = data.frontendDomain || '';
     $('cfgBackend').value = data.backendDomain || '';
     $('cfgNetPref').value = ['auto', 'v6', 'v4'].includes(data.networkPreference) ? data.networkPreference : 'auto';
+    $('cfgTgToken').value = ''; // Token 不回显：留空 = 保持原配置
+    $('cfgTgToken').placeholder = data.tgToken ? '已配置（留空保持）' : '@BotFather 创建获取';
+    $('cfgTgChatId').value = data.tgChatId || '';
+    $('cfgTgNotify').classList.toggle('on', data.tgNotify !== false);
   } catch (e) {}
 }
 
 async function saveConfig() {
   if (role !== 'admin') return toast(I.warn + ' 仅管理员可操作');
   try {
-    await api('/api/config', { method: 'POST', body: JSON.stringify({ frontendDomain: $('cfgFrontend').value.trim(), backendDomain: $('cfgBackend').value.trim(), networkPreference: $('cfgNetPref').value }) });
+    await api('/api/config', { method: 'POST', body: JSON.stringify({ frontendDomain: $('cfgFrontend').value.trim(), backendDomain: $('cfgBackend').value.trim(), networkPreference: $('cfgNetPref').value, tgToken: $('cfgTgToken').value.trim(), tgChatId: $('cfgTgChatId').value.trim(), tgNotify: $('cfgTgNotify').classList.contains('on') }) });
     toast(I.check + ' 反代配置已保存');
   } catch (e) { toast(I.warn + ' 保存失败'); }
 }
@@ -620,6 +829,10 @@ function renderRoutes() {
       <div class="info-row">
         <span class="info-label">缓存</span>
         <span class="badge" style="${r.cache_img ? 'background:rgba(52,199,89,.12);color:#34c759;' : ''}">${r.cache_img ? '已开启' : '关闭'}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">观看倒计时</span>
+        <span class="badge watch-badge" data-watch="${escapeHtml(r.prefix)}" style="min-width:0;">${r.watchDays && r.watchDays !== '0' ? '加载中…' : '未开启'}</span>
       </div>
       <div class="info-row">
         <span class="info-label">源站</span>
@@ -753,6 +966,7 @@ function openNodeModal(prefix) {
       $('rtNetPref').value = r.v6 || 'auto';
       $('rtCache').classList.toggle('on', !!r.cache_img);
       selectedIcon = r.icon || '';
+      $('rtWatchDays').value = ['7', '14', '21'].includes(String(r.watchDays)) ? String(r.watchDays) : '0';
       if (selectedIcon) $('rtIconSearch').value = selectedIcon;
       renderIconGrid($('rtIconSearch').value);
       const targets = r.target.split(',').map(s => s.trim()).filter(Boolean);
@@ -780,11 +994,14 @@ $('addForm').addEventListener('submit', async (e) => {
   const btn = $('rtSubmitBtn');
   btn.disabled = true; btn.textContent = '保存中…';
   try {
-    await api('/api/routes', { method: 'POST', body: JSON.stringify({ prefix, target, mode, cache_img: cache, icon: selectedIcon, v6 }) });
+    const watchDays = $('rtWatchDays').value;
+    await api('/api/routes', { method: 'POST', body: JSON.stringify({ prefix, target, mode, cache_img: cache, icon: selectedIcon, v6, watchDays }) });
     toast(I.check + ' 节点已保存');
+    confetti('ok');
     closeNodeModal();
     loadRoutes();
-  } catch (err) { toast(I.warn + ' 保存失败: ' + (err.message || '')); }
+    startWatchPoll();
+  } catch (err) { toast(I.warn + ' 保存失败: ' + (err.message || '')); confetti('fail'); }
   finally { btn.disabled = false; btn.textContent = editingPrefix ? '保存修改' : '保存部署'; }
 });
 
