@@ -260,6 +260,33 @@ cd /opt/emby-proxy && nohup node server.js > /tmp/emby-proxy.log 2>&1 &
 
 ---
 
+## 保号报警推送设置（Telegram / Bark）
+
+> 通知设置默认折叠在面板底部的「通知设置（Bark · iOS 系统通知）」卡片里，点击标题展开。任一节点超过设定的观看下限天数没有真实观看 → 自动推送报警，恢复观看后自动解除。
+
+### ① Telegram 推送
+
+1. Telegram 搜索 **@BotFather**，发送 `/newbot` 创建机器人，拿到 **Bot Token**（形如 `123456789:AA...`）
+2. 获取 **Chat ID**：Telegram 搜索 **@userinfobot**，发送 `/start`，它直接回复你的数字 ID（推荐）
+3. 面板 → 通知设置 → 填写 Bot Token 和 Chat ID → 打开「报警推送」开关 → 保存
+4. 点击「测试 Telegram」立即验证，收到消息即成功
+
+### ② Bark（iOS 系统通知，免费）
+
+1. App Store 安装 **Bark**（免费）并打开，复制**设备 Key**（形如 `https://api.day.app/xxxxxxxxxxxxxxxx`，取 `day.app/` 后面那串）
+2. 面板 → 通知设置 → 填写 Bark 设备 Key
+3. 推送级别可选：`active` 常规 / `timeSensitive` 时效 / `critical` 强提醒（建议时效或强提醒）/ `passive` 静默
+4. 服务地址默认官方 `https://api.day.app`，自建 Bark 服务才改成自己的
+5. 打开「报警推送」开关 → 保存 → 点「测试 Bark 通知」或「60 秒后测试通知」验证
+
+### ③ 常用运维
+
+- 留空保存 = 保持原配置（Token / Key 不回显，防止泄露）
+- 临时关闭：关闭「报警推送」开关即可，无需删除 Key
+- 更换设备：旧 Key 失效后填新 Key 保存即可
+
+---
+
 ## API 速查
 
 ```
