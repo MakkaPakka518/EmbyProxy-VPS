@@ -846,17 +846,13 @@ async function handleApi(req, res, url) {
     const txt = '测试通知：面板通知渠道正常 ✓';
     if (type === 'bark') {
       if (!config.barkKey) return sendJSON(res, 400, { success: false, msg: '未配置 Bark Key' });
-      try {
-        const server = (config.barkServer || 'https://api.day.app').replace(/\/+$/, '');
-        const r = await fetch(server + '/push', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device_key: String(config.barkKey).trim(), title: 'Emby 反代面板', body: txt + '（观看报警测试）', level: config.barkLevel || 'active', sound: config.barkSound || 'default' })
-        });
-        const j = await r.json().catch(() => null);
-        const code = j && j.code !== undefined ? j.code : r.status;
-        if (code === 200) return sendJSON(res, 200, { success: true, msg: 'Bark 测试通知已发送，请检查手机通知栏' });
-        return sendJSON(res, 500, { success: false, msg: 'Bark 返回: ' + JSON.stringify(j || {}).slice(0, 200) });
-      } catch (e) { return sendJSON(res, 500, { success: false, msg: 'Bark 请求失败: ' + (e.message || e) }); }
+      if (global.__barkTestQueued) return sendJSON(res, 200, { success: true, msg: '已有测试通知在排队，60 秒内将发送' });
+      global.__barkTestQueued = true;
+      setTimeout(() => {
+        global.__barkTestQueued = false;
+        barkSend('文本测试成功 ✓');
+      }, 60 * 1000);
+      return sendJSON(res, 200, { success: true, msg: '已排队，约 60 秒后发送' });
     }
     if (type === 'tg') {
       if (!config.tgToken || !config.tgChatId) return sendJSON(res, 400, { success: false, msg: '未配置 Telegram' });
