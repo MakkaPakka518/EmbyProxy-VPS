@@ -1072,10 +1072,10 @@ async function saveProxyToken() {
   try {
     const r = await api('/api/account', { method: 'POST', body: JSON.stringify({ proxyToken: { enabled, key } }) });
     if (r && !r.success) return toast(I.warn + ' ' + (r.error || '保存失败'));
+    closeAccount();
     toast(I.check + ' 反代 Token 已' + (enabled ? '开启，链接前缀 /' + key + '/' : '关闭'));
     await loadPtState();
-    loadRoutes();
-    closeAccount();
+    try { loadRoutes(); } catch (e) { console.error(e); }
   } catch (e) { toast(I.warn + ' 保存失败'); }
 }
 function fmtHitTs(ts) {
