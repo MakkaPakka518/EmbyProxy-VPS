@@ -1075,6 +1075,7 @@ async function saveProxyToken() {
     toast(I.check + ' 反代 Token 已' + (enabled ? '开启，链接前缀 /' + key + '/' : '关闭'));
     await loadPtState();
     loadRoutes();
+    closeAccount();
   } catch (e) { toast(I.warn + ' 保存失败'); }
 }
 function fmtHitTs(ts) {
