@@ -175,15 +175,16 @@ function getTargetOrigins(targets, extra) {
  *  自动识别的未知媒体源站 → 形式B：/前缀/完整源站URL（前后端分离自动反代回源） */
 function rewriteUrlsInText(text, knownOrigins, mediaOrigins, proxyOrigin, prefix) {
   if (!text) return text;
+  const ptp = proxyUrlPrefix();
   // 先替换自动识别的未知媒体源站（形式B），避免被形式A 误伤
   for (const m of mediaOrigins || []) {
     if (!m || !m.origin) continue;
-    const ref = `${proxyOrigin}/${prefix}/${m.origin}`;
+    const ref = `${proxyOrigin}/${ptp}${prefix}/${m.origin}`;
     text = text.split(m.origin).join(ref);
   }
   for (const origin of knownOrigins || []) {
     if (!origin) continue;
-    const panelRef = `${proxyOrigin}/${prefix}`;
+    const panelRef = `${proxyOrigin}/${ptp}${prefix}`;
     text = text.split(origin).join(panelRef);
   }
   return text;
@@ -224,7 +225,7 @@ async function buildUpstreamCandidates(target, remainingPath, search) {
   return candidates;
 }
 
-async function proxyOnce(targetUrlStr, req, mode, realIp, originHost) {
+async function proxyOnce(targetUrlStr, req, mode, realIp, originHost, fake) {
   const targetUrl = new URL(targetUrlStr);
   const headers = new Headers();
 
@@ -253,6 +254,58 @@ async function proxyOnce(targetUrlStr, req, mode, realIp, originHost) {
   if (mode === 'dual' || mode === 'realip_only') {
     headers.set('X-Real-IP', realIp);
     headers.set('X-Forwarded-For', realIp);
+  }
+
+  // ========== 伪装设备请求头（参考 CF Worker 伪装版） ==========
+  if (fake && fake.enabled) {
+    // 1. 伪装 User-Agent
+    if (fake.ua) headers.set('User-Agent', fake.ua);
+
+    // 2. 伪装 Emby 授权头里的 Client / Version / Device
+    ['x-emby-authorization', 'authorization'].forEach(headerName => {
+      const authHeader = headers.get(headerName);
+      if (!authHeader) return;
+      let h = authHeader;
+      if (fake.client) h = h.replace(/(Client\s*=\s*)(?:"[^"]*"|'[^']*'|[^,\s]+)/ig, `$1"${fake.client}"`);
+      if (fake.version) h = h.replace(/(Version\s*=\s*)(?:"[^"]*"|'[^']*'|[^,\s]+)/ig, `$1"${fake.version}"`);
+      if (fake.device) h = h.replace(/(Device\s*=\s*)(?:"[^"]*"|'[^']*'|[^,\s]+)/ig, `$1"${fake.device}"`);
+      headers.set(headerName, h);
+    });
+
+    // 3. 伪装标准 Emby 头（x-emby-client / x-emby-client-version / x-emby-device-name）
+    const paramsToReplace = {
+      'x-emby-client': fake.client,
+      'x-emby-client-version': fake.version,
+      'x-emby-device-name': fake.device,
+    };
+    for (const key of [...headers.keys()]) {
+      const lowerKey = key.toLowerCase();
+      if (paramsToReplace[lowerKey] && headers.get(key)) headers.set(key, paramsToReplace[lowerKey]);
+    }
+
+    // 4. 伪装 URL 参数里同名的查询串（部分客户端把身份信息放在 query）
+    for (const key of [...targetUrl.searchParams.keys()]) {
+      const lowerKey = key.toLowerCase();
+      if (paramsToReplace[lowerKey]) targetUrl.searchParams.set(key, paramsToReplace[lowerKey]);
+    }
+
+    // 5. 请求体（JSON）内嵌身份字段改写
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.__bodyBuffer && req.__bodyBuffer.byteLength > 0 && req.__bodyBuffer.byteLength < 102400) {
+      const contentType = String(req.headers['content-type'] || '').toLowerCase();
+      if (contentType.includes('application/json')) {
+        try {
+          let bodyText = req.__bodyBuffer.toString('utf8');
+          const before = bodyText;
+          if (fake.client) bodyText = bodyText.replace(/("Client(Name)?"\s*:\s*")[^"]+(")/ig, `$1${fake.client}$3`);
+          if (fake.version) bodyText = bodyText.replace(/("Version"\s*:\s*")[^"]+(")/ig, `$1${fake.version}$2`);
+          if (fake.device) bodyText = bodyText.replace(/("Device(Name)?"\s*:\s*")[^"]+(")/ig, `$1${fake.device}$3`);
+          if (bodyText !== before) {
+            req.__bodyBuffer = Buffer.from(bodyText);
+            headers.set('Content-Length', String(req.__bodyBuffer.byteLength));
+          }
+        } catch (e) { /* 改写失败则保持原样透传 */ }
+      }
+    }
   }
 
   const init = { method: req.method, headers, redirect: 'manual' };
@@ -305,14 +358,48 @@ function putCache(url, buf, headers, ttlSec = 86400) {
 }
 
 /* ---------- 反代主入口 ---------- */
+function proxyUrlPrefix() {
+  const pt = config.proxyToken || {};
+  return (pt.enabled && pt.key) ? pt.key + '/' : '';
+}
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function recordProxyHit(req, path) {
+  if (!config.proxyHits) config.proxyHits = [];
+  const ip = getClientIp(req);
+  const ua = (req.headers['user-agent'] || '').slice(0, 200);
+  const now = Date.now();
+  const hit = config.proxyHits.find(h => h.ip === ip && h.path === path);
+  if (hit) { hit.times = (hit.times || 1) + 1; hit.ts = now; }
+  else config.proxyHits.unshift({ ip, path: String(path).slice(0, 200), ua, ts: now, times: 1 });
+  if (config.proxyHits.length > 500) config.proxyHits.length = 500;
+  persistConfig();
+}
 async function handleProxy(req, res, pathname, search) {
-  const decodedPath = decodeURIComponent(pathname);
+  let decodedPath = decodeURIComponent(pathname);
+  // 反代 Token 门禁：开启后路径必须带 /密钥/ 前缀才可反代
+  const pt = config.proxyToken || {};
+  if (pt.enabled && pt.key) {
+    const prefixPath = '/' + pt.key + '/';
+    let stripped = null;
+    if (decodedPath === '/' + pt.key) stripped = '/';
+    else if (decodedPath.indexOf(prefixPath) === 0) stripped = decodedPath.slice(prefixPath.length - 1);
+    if (stripped === null) {
+      recordProxyHit(req, decodedPath);
+      res.writeHead(302, { Location: '/catch', 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
+    decodedPath = stripped;
+  }
   let targetUrls = [];
   let remainingPath = '';
   let matchedPrefix = null;
   let mode = 'off';
   let enableCache = true;
   let ipv6Mode = 'auto';
+  let fake = null;
   const proxyOrigin = `${req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'}://${req.headers.host}`;
 
   if (decodedPath.startsWith('/http://') || decodedPath.startsWith('/https://')) {
@@ -328,6 +415,15 @@ async function handleProxy(req, res, pathname, search) {
     mode = route.mode || 'off';
     enableCache = route.cache_img !== 'off';
     ipv6Mode = route.v6 || 'auto';
+    if (route.fake) {
+      fake = {
+        enabled: true,
+        client: route.customClient || '',
+        version: route.customVersion || '',
+        device: route.customDevice || '',
+        ua: route.customUa || '',
+      };
+    }
     remainingPath = '/' + parts.slice(2).join('/');
     targetUrls = (route.target || '').split(',').map(s => s.trim()).filter(Boolean);
     if (remainingPath.startsWith('/http://') || remainingPath.startsWith('/https://')) {
@@ -403,10 +499,10 @@ async function handleProxy(req, res, pathname, search) {
             originHost = r.originHost;
           }
           try {
-            upstreamRes = await proxyOnce(requestUrl, req, mode, realIp, originHost);
+            upstreamRes = await proxyOnce(requestUrl, req, mode, realIp, originHost, fake);
           } catch (e) {
             if (requestUrl !== candidateUrl) {
-              upstreamRes = await proxyOnce(candidateUrl, req, mode, realIp);
+              upstreamRes = await proxyOnce(candidateUrl, req, mode, realIp, null, fake);
             } else {
               throw e;
             }
@@ -425,23 +521,14 @@ async function handleProxy(req, res, pathname, search) {
 
         const upstreamHeaders = Object.fromEntries(upstreamRes.headers.entries());
 
-        // redirect 改写：302 Location 可能指向未配置的媒体后端域名，
-        // 必须与文本响应一样自动识别（extractMediaOrigins）并按形式B改写，避免泄漏真实后端
+        // redirect 改写
         if (status >= 300 && status < 400) {
           const loc = upstreamRes.headers.get('location');
-          let rewrittenLoc = undefined;
-          if (loc) {
-            if (/^https?:\/\//i.test(loc)) {
-              const mediaFound = extractMediaOrigins(loc, baseOrigins.map(o => o));
-              rewrittenLoc = rewriteUrlsInText(loc, baseOrigins, mediaFound, proxyOrigin, matchedPrefix || '');
-            } else {
-              // 相对路径 Location：补前缀继续走反代，避免丢路由
-              rewrittenLoc = `${proxyOrigin}/${matchedPrefix || ''}${loc.startsWith('/') ? '' : '/'}${loc}`;
-            }
-          }
+          const rewrittenLoc = loc
+            ? rewriteUrlsInText(loc, baseOrigins, [], proxyOrigin, matchedPrefix || '')
+            : undefined;
           const body = await upstreamRes.arrayBuffer();
           const headersOut = { ...upstreamHeaders, 'Content-Type': upstreamRes.headers.get('content-type') || 'text/html; charset=utf-8' };
-          delete headersOut['location']; // 删除原始 Location（fetch 规范化后为小写），只留改写后的
           if (rewrittenLoc) headersOut['Location'] = rewrittenLoc;
           delete headersOut['content-length'];
           headersOut['Content-Length'] = String(body.byteLength);
@@ -459,7 +546,14 @@ async function handleProxy(req, res, pathname, search) {
 
           // 自动识别：未配置 backendDomain 时，从媒体响应里学习源站
           const mediaFound = extractMediaOrigins(text, baseOrigins.map(o => o));
-          const rewritten = rewriteUrlsInText(text, baseOrigins, mediaFound, proxyOrigin, matchedPrefix || '');
+          let rewritten = rewriteUrlsInText(text, baseOrigins, mediaFound, proxyOrigin, matchedPrefix || '');
+
+          // 伪装：改写返回给客户端的身份字段（PlaybackInfo 等 JSON 响应）
+          if (fake && fake.enabled && /\/PlaybackInfo/i.test(decodedPath) && /json/i.test(ct)) {
+            if (fake.client) rewritten = rewritten.replace(/("Client(Name)?"\s*:\s*")[^"]+(")/ig, `$1${fake.client}$3`);
+            if (fake.version) rewritten = rewritten.replace(/("Version"\s*:\s*")[^"]+(")/ig, `$1${fake.version}$2`);
+            if (fake.device) rewritten = rewritten.replace(/("Device(Name)?"\s*:\s*")[^"]+(")/ig, `$1${fake.device}$3`);
+          }
 
           const headersOut = { ...upstreamHeaders };
           delete headersOut['content-length'];
@@ -488,11 +582,7 @@ async function handleProxy(req, res, pathname, search) {
         res.writeHead(status, upstreamHeaders);
         if (upstreamRes.body) {
           for await (const chunk of upstreamRes.body) {
-            countDown(matchedPrefix, chunk.length);
-            // 背压保护：下游（用户端）写不动时等待 drain，避免大文件在 VPS 内存堆积
-            if (!res.write(Buffer.from(chunk))) {
-              await new Promise(r => res.once('drain', r));
-            }
+            res.write(Buffer.from(chunk));
           }
         }
         res.end();
@@ -518,153 +608,6 @@ function sendText(res, code, text) {
 /* ==========================================================
  * 管理 API
  * ========================================================== */
-/* ==========================================================
- * 实时速率统计：每节点响应下行字节，60 秒环形窗口（每 1 秒滑入一格）
- * ========================================================== */
-const RATE_WINDOW = 60;
-const rateStats = {};
-function countDown(prefix, n) {
-  if (!prefix || !n) return;
-  if (!rateStats[prefix]) rateStats[prefix] = { down: new Array(RATE_WINDOW).fill(0), cur: 0 };
-  rateStats[prefix].cur += n;
-}
-setInterval(() => {
-  for (const k of Object.keys(rateStats)) {
-    const st = rateStats[k];
-    st.down.push(st.cur);
-    if (st.down.length > RATE_WINDOW) st.down.shift();
-    st.cur = 0;
-  }
-}, 1000).unref();
-
-/* ==========================================================
- * 观看倒计时 + 报警提醒（普通版：不自动模拟播放，只监测提醒）
- * 节点可自定义观看间隔天数（0=关闭，任意正数，支持小数）
- * 超过设定天数没有真实观看 → 面板红色报警 + Telegram 推送
- * 界面实时展示：上次观看 X 天前 · 距逾期还有 X 天X时 / 已逾期 X 天
- * ========================================================== */
-let watchAlerts = []; // 面板内报警记录
-
-/** 某节点最近一次真实观看时间（遍历 stats 各天 lastPlay 取最新） */
-function lastWatchOf(prefix) {
-  let latest = '';
-  for (const day of Object.keys(stats)) {
-    const p = stats[day][prefix];
-    if (p && p.lastPlay && (!latest || p.lastPlay > latest)) latest = p.lastPlay;
-  }
-  return latest;
-}
-
-/** 全部节点的观看倒计时状态 */
-function watchStatus() {
-  const out = [];
-  const now = Date.now();
-  for (const r of routes) {
-    const days = parseFloat(r.watchDays || '0') || 0;
-    const lw = lastWatchOf(r.prefix);
-    const item = { prefix: r.prefix, remark: r.remark || '', watchDays: days, lastWatch: lw };
-    if (days > 0) {
-      const last = lw ? new Date(lw).getTime() : 0;
-      const elapsed = last ? Math.round(((now - last) / 86400000) * 10) / 10 : null;
-      item.elapsedDays = elapsed;
-      item.overdue = !last || elapsed > days;
-      item.warn = !item.overdue && elapsed >= days - 3;
-      item.leftMs = last ? (last + days * 86400000 - now) : -1;
-      item.leftDays = item.leftMs >= 0 ? Math.round((item.leftMs / 86400000) * 10) / 10 : null;
-    }
-    out.push(item);
-  }
-  return out;
-}
-
-function pushWatchAlert(prefix, text) {
-  watchAlerts.unshift({ time: Date.now(), prefix: String(prefix || ''), detail: String(text || '').slice(0, 220) });
-  if (watchAlerts.length > 30) watchAlerts.length = 30;
-}
-
-/** 每小时检查：超时未观看 → 报警（每日每节点最多一条）；恢复观看后清除标记 */
-function checkWatchAlerts() {
-  if (!config.watchAlerted) config.watchAlerted = {};
-  if (!config.watchWarned) config.watchWarned = {};
-  const today = new Date(Date.now() + 8 * 3600000).toISOString().split('T')[0];
-  let changed = false;
-  for (const it of watchStatus()) {
-    // 提前预警：距设定观看间隔还剩 3 天以内（提前 2-3 天）提醒
-    if (it.watchDays > 0 && it.warn) {
-      if (config.watchWarned[it.prefix] !== today) {
-        config.watchWarned[it.prefix] = today;
-        changed = true;
-        const who = (it.remark ? '「' + it.remark + '」（/' + it.prefix + '）' : '/' + it.prefix);
-        const left = (it.elapsedDays == null ? it.watchDays : Math.max(0, it.watchDays - it.elapsedDays));
-        const txt = '节点 ' + who + ' 已 ' + (it.elapsedDays == null ? '从未观看' : it.elapsedDays + ' 天') + ' 未观看，还有 ' + (Math.round(left * 10) / 10) + ' 天将达到设定的 ' + it.watchDays + ' 天观看下限，请注意保号！';
-        pushWatchAlert(it.prefix, txt);
-        console.log('[watch-warn] ' + txt);
-        if (config.tgToken && config.tgChatId && config.tgNotify !== false) tgSend('⚠️ ' + txt);
-        if (config.barkKey && config.barkNotify !== false) barkSend('⚠️ ' + txt);
-      }
-    }
-    if (it.watchDays > 0 && it.overdue) {
-      if (config.watchAlerted[it.prefix] !== today) {
-        config.watchAlerted[it.prefix] = today;
-        changed = true;
-        const who = (it.remark ? '「' + it.remark + '」（/' + it.prefix + '）' : '/' + it.prefix);
-        const txt = '节点 ' + who + ' 已 ' + (it.elapsedDays == null ? '从未观看' : it.elapsedDays + ' 天') + ' 未观看，超过设定的 ' + it.watchDays + ' 天，请注意保号！';
-        pushWatchAlert(it.prefix, txt);
-        console.log('[watch-alert] ' + txt);
-        if (config.tgToken && config.tgChatId && config.tgNotify !== false) tgSend('⚠️ ' + txt);
-        if (config.barkKey && config.barkNotify !== false) barkSend('⚠️ ' + txt);
-      }
-    } else if (config.watchAlerted[it.prefix] || config.watchWarned[it.prefix]) {
-      if (config.watchAlerted[it.prefix]) delete config.watchAlerted[it.prefix];
-      if (config.watchWarned[it.prefix]) delete config.watchWarned[it.prefix];
-      changed = true;
-    }
-  }
-  if (changed) persistConfig();
-}
-checkWatchAlerts(); // 启动即检查一次（记录当前状态基线）
-setInterval(checkWatchAlerts, 3600000).unref();
-
-/* ==========================================================
- * Telegram 报警推送（普通版仅推送，不含 Bot 命令轮询）
- * ========================================================== */
-async function tgCall(method, payload) {
-  if (!config.tgToken) return null;
-  try {
-    const r = await fetch('https://api.telegram.org/bot' + config.tgToken + '/' + method, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-    });
-    return await r.json();
-  } catch (e) { return null; }
-}
-async function tgSend(text) {
-  if (!config.tgToken || !config.tgChatId) return;
-  try {
-    await tgCall('sendMessage', { chat_id: String(config.tgChatId), text: String(text).slice(0, 3800), parse_mode: 'HTML' });
-  } catch (e) {}
-}
-
-/* ==========================================================
- * Bark 通知：iOS 系统级推送（Bark App 免费 APNs 通道）
- * ========================================================== */
-async function barkSend(text) {
-  if (!config.barkKey) return;
-  const server = (config.barkServer || 'https://api.day.app').replace(/\/+$/, '');
-  try {
-    await fetch(server + '/push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        device_key: String(config.barkKey).trim(),
-        title: 'Emby 反代面板',
-        body: String(text || '').slice(0, 1800),
-        level: config.barkLevel || 'active',
-        sound: config.barkSound || 'default'
-      })
-    });
-  } catch (e) {}
-}
-
 async function handleApi(req, res, url) {
   const role = getRole(req);
   const needAdmin = (pathname) => {
@@ -706,10 +649,36 @@ async function handleApi(req, res, url) {
   if (url.pathname === '/api/account' && req.method === 'POST') {
     if (!needAdmin(url.pathname)) return;
     const body = await readBody(req).then(b => { try { return JSON.parse(b.toString()); } catch (e) { return {}; } });
+    if (body.proxyToken !== undefined) {
+      const pt = body.proxyToken;
+      const enabled = !!pt.enabled;
+      const key = String(pt.key || '').trim();
+      if (enabled && !/^[A-Za-z0-9]{3,32}$/.test(key)) return sendJSON(res, 400, { success: false, error: '密钥需 3-32 位字母数字' });
+      config.proxyToken = { enabled, key };
+      persistConfig();
+      return sendJSON(res, 200, { success: true });
+    }
     const pw = String(body.password || '').trim();
     if (pw.length < 4) return sendJSON(res, 400, { success: false, error: '密码至少 4 位' });
     config.adminPass = pw;
     persistConfig();
+    return sendJSON(res, 200, { success: true });
+  }
+
+  // 反代 Token 状态（登录可见：订阅者也需知道节点链接前缀；未登录不泄漏）
+  if (url.pathname === '/api/proxytoken' && req.method === 'GET') {
+    const pt = config.proxyToken || {};
+    return sendJSON(res, 200, { success: true, enabled: !!(pt.enabled && pt.key), key: (pt.enabled && pt.key) ? pt.key : '' });
+  }
+  // 来访记录 IP（仅管理员）
+  if (url.pathname === '/api/proxytoken/hits' && req.method === 'GET') {
+    if (role !== 'admin') return sendJSON(res, 403, { success: false, error: 'Forbidden' });
+    return sendJSON(res, 200, { success: true, hits: config.proxyHits || [] });
+  }
+  if (url.pathname === '/api/proxytoken/hits' && req.method === 'POST') {
+    if (role !== 'admin') return sendJSON(res, 403, { success: false, error: 'Forbidden' });
+    const body = await readBody(req).then(b => { try { return JSON.parse(b.toString()); } catch (e) { return {}; } });
+    if (body.clear) { config.proxyHits = []; persistConfig(); }
     return sendJSON(res, 200, { success: true });
   }
 
@@ -738,12 +707,12 @@ async function handleApi(req, res, url) {
       existing.cache_img = body.cache_img !== undefined ? body.cache_img : existing.cache_img;
       if (body.v6 !== undefined) existing.v6 = body.v6;
       if (body.icon !== undefined) existing.icon = body.icon;
-      if (body.watchDays !== undefined) {
-        const wd = String(body.watchDays);
-        existing.watchDays = (/^\d+(\.\d+)?$/.test(wd) && parseFloat(wd) >= 0) ? wd : existing.watchDays;
-      }
+      existing.fake = body.fake !== undefined ? !!body.fake : existing.fake;
+      if (body.customClient !== undefined) existing.customClient = body.customClient;
+      if (body.customVersion !== undefined) existing.customVersion = body.customVersion;
+      if (body.customDevice !== undefined) existing.customDevice = body.customDevice;
+      if (body.customUa !== undefined) existing.customUa = body.customUa;
     } else {
-      const wd = String(body.watchDays !== undefined ? body.watchDays : '0');
       routes.push({
         prefix,
         target,
@@ -751,7 +720,11 @@ async function handleApi(req, res, url) {
         cache_img: body.cache_img !== undefined ? body.cache_img : true,
         v6: body.v6 || 'auto',
         icon: body.icon || '',
-        watchDays: (/^\d+(\.\d+)?$/.test(wd) && parseFloat(wd) >= 0) ? wd : '0',
+        fake: !!body.fake,
+        customClient: body.customClient || '',
+        customVersion: body.customVersion || '',
+        customDevice: body.customDevice || '',
+        customUa: body.customUa || '',
         sort_order: routes.length + 1,
         createdAt: nowStr(),
       });
@@ -798,6 +771,11 @@ async function handleApi(req, res, url) {
       cache_img: r.cache_img !== undefined ? r.cache_img : true,
       v6: r.v6 || 'auto',
       icon: r.icon || '',
+      fake: !!r.fake,
+      customClient: r.customClient || '',
+      customVersion: r.customVersion || '',
+      customDevice: r.customDevice || '',
+      customUa: r.customUa || '',
       sort_order: r.sort_order || 1,
       createdAt: r.createdAt || nowStr(),
     })).filter(r => r.prefix && r.target);
@@ -836,7 +814,7 @@ async function handleApi(req, res, url) {
   /* ---- 前后端分离配置 ---- */
   if (url.pathname === '/api/config' && req.method === 'GET') {
     if (!needAdmin(url.pathname)) return;
-    return sendJSON(res, 200, { success: true, frontendDomain: config.frontendDomain || '', backendDomain: config.backendDomain || '', networkPreference: config.networkPreference || 'auto', tgToken: config.tgToken ? '已配置' : '', tgChatId: config.tgChatId || '', tgNotify: config.tgNotify !== false, barkServer: config.barkServer || 'https://api.day.app', barkKey: config.barkKey ? '已配置' : '', barkNotify: config.barkNotify !== false, barkLevel: config.barkLevel || 'active' });
+    return sendJSON(res, 200, { success: true, frontendDomain: config.frontendDomain || '', backendDomain: config.backendDomain || '', networkPreference: config.networkPreference || 'auto' });
   }
 
   if (url.pathname === '/api/config' && req.method === 'POST') {
@@ -848,55 +826,8 @@ async function handleApi(req, res, url) {
       config.networkPreference = ['auto', 'v6', 'v4'].includes(body.networkPreference) ? body.networkPreference : 'auto';
       applyIpv6Policy();
     }
-    if (body.tgToken !== undefined) config.tgToken = String(body.tgToken || '').trim();
-    if (body.tgChatId !== undefined) config.tgChatId = String(body.tgChatId || '').trim();
-    if (body.tgNotify !== undefined) config.tgNotify = !!body.tgNotify;
-    if (body.barkServer !== undefined) config.barkServer = String(body.barkServer || 'https://api.day.app').trim();
-    if (body.barkKey !== undefined) config.barkKey = String(body.barkKey || '').trim();
-    if (body.barkNotify !== undefined) config.barkNotify = !!body.barkNotify;
-    if (body.barkLevel !== undefined) config.barkLevel = ['critical', 'active', 'timeSensitive', 'passive'].includes(body.barkLevel) ? body.barkLevel : 'active';
     persistConfig();
     return sendJSON(res, 200, { success: true });
-  }
-
-  /* ---- 测试通知（bark / tg） ---- */
-  if (url.pathname === '/api/test-notify' && req.method === 'POST') {
-    if (!needAdmin(url.pathname)) return;
-    const body = await readBody(req).then(b => { try { return JSON.parse(b.toString()); } catch (e) { return {}; } });
-    const type = String(body.type || 'bark');
-    const txt = '测试通知：面板通知渠道正常 ✓';
-    if (type === 'bark' && body.delay) {
-      // 60 秒后发送（测试延迟通知）：防重复排队，60s 内只排一次
-      if (!config.barkKey) return sendJSON(res, 400, { success: false, msg: '未配置 Bark Key' });
-      if (global.__barkTestQueued) return sendJSON(res, 200, { success: true, msg: '已有测试通知在排队，60 秒内将发送' });
-      global.__barkTestQueued = true;
-      setTimeout(() => {
-        global.__barkTestQueued = false;
-        barkSend('文本测试成功 ✓');
-      }, 60 * 1000);
-      return sendJSON(res, 200, { success: true, msg: '已排队，约 60 秒后发送' });
-    }
-    if (type === 'bark') {
-      // 立即发送（原测试按钮行为）
-      if (!config.barkKey) return sendJSON(res, 400, { success: false, msg: '未配置 Bark Key' });
-      try {
-        const server = (config.barkServer || 'https://api.day.app').replace(/\/+$/, '');
-        const r = await fetch(server + '/push', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device_key: String(config.barkKey).trim(), title: 'Emby 反代面板', body: txt + '（观看报警测试）', level: config.barkLevel || 'active', sound: config.barkSound || 'default' })
-        });
-        const j = await r.json().catch(() => null);
-        const code = j && j.code !== undefined ? j.code : r.status;
-        if (code === 200) return sendJSON(res, 200, { success: true, msg: 'Bark 测试通知已发送，请检查手机通知栏' });
-        return sendJSON(res, 500, { success: false, msg: 'Bark 返回: ' + JSON.stringify(j || {}).slice(0, 200) });
-      } catch (e) { return sendJSON(res, 500, { success: false, msg: 'Bark 请求失败: ' + (e.message || e) }); }
-    }
-    if (type === 'tg') {
-      if (!config.tgToken || !config.tgChatId) return sendJSON(res, 400, { success: false, msg: '未配置 Telegram' });
-      await tgSend(txt + '（观看报警测试）');
-      return sendJSON(res, 200, { success: true, msg: 'TG 测试通知已发送' });
-    }
-    return sendJSON(res, 400, { success: false, msg: '未知通知类型' });
   }
 
   /* ---- 统计 ---- */
@@ -944,20 +875,6 @@ async function handleApi(req, res, url) {
     return sendJSON(res, 200, { success: true, cleared: n });
   }
 
-  /* ---- 实时速率（60s 环形窗口） ---- */
-  if (url.pathname === '/api/rates' && req.method === 'GET') {
-    if (!needAdmin(url.pathname)) return;
-    const out = {};
-    for (const k of Object.keys(rateStats)) out[k] = { down: rateStats[k].down.slice() };
-    return sendJSON(res, 200, { success: true, rates: out });
-  }
-
-  /* ---- 观看倒计时（每节点最近观看时间 / 差多久没观看 / 报警记录） ---- */
-  if (url.pathname === '/api/watch/status' && req.method === 'GET') {
-    if (!needAdmin(url.pathname)) return;
-    return sendJSON(res, 200, { success: true, items: watchStatus(), alerts: watchAlerts });
-  }
-
   return sendJSON(res, 404, { success: false, error: 'Not Found' });
 }
 
@@ -981,6 +898,28 @@ const server = http.createServer(async (req, res) => {
       return await handleApi(req, res, url);
     }
 
+    // 反代 Token 抓人页面
+    if (url.pathname === '/catch') {
+      const ip = getClientIp(req);
+      const ua = (req.headers['user-agent'] || '').slice(0, 120);
+      const html = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Oops</title><style>
+        body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at top,#0f0c29,#302b63,#24243e);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;color:#fff}
+        .box{text-align:center;padding:48px;border:1px solid rgba(255,255,255,.15);border-radius:20px;background:rgba(255,255,255,.05);backdrop-filter:blur(8px);max-width:90vw}
+        h1{font-size:34px;margin:0 0 12px;letter-spacing:2px}
+        .sub{font-size:14px;color:#a8b2d1;margin-bottom:24px}
+        .ip{font-size:18px;font-weight:700;color:#ffd700;word-break:break-all}
+        .meta{font-size:12px;color:#7f8bb3;margin-top:16px;word-break:break-all}
+      </style></head><body><div class="box">
+        <h1>宝贝抓到你了 👋</h1>
+        <div class="sub">你的来访信息已被记录</div>
+        <div class="ip">${escapeHtml(ip)}</div>
+        <div class="meta">UA: ${escapeHtml(ua)}</div>
+      </div></body></html>`;
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(html);
+      return;
+    }
+
     // 管理面板
     if (url.pathname === '/' || url.pathname === '/panel') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -998,7 +937,17 @@ const server = http.createServer(async (req, res) => {
 /* WebSocket upgrade 透传 */
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const decodedPath = decodeURIComponent(url.pathname);
+  let decodedPath = decodeURIComponent(url.pathname);
+  // 反代 Token 门禁：WS 路径同样需带密钥前缀
+  const pt = config.proxyToken || {};
+  if (pt.enabled && pt.key) {
+    const prefixPath = '/' + pt.key + '/';
+    let stripped = null;
+    if (decodedPath === '/' + pt.key) stripped = '/';
+    else if (decodedPath.indexOf(prefixPath) === 0) stripped = decodedPath.slice(prefixPath.length - 1);
+    if (stripped === null) { socket.destroy(); return; }
+    decodedPath = stripped;
+  }
   let targetUrls = [];
   let remainingPath = '';
 
