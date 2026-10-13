@@ -17,46 +17,15 @@
         --radius-card: 16px;
     }
 
-    /* 暗色模式：科幻风（深空蓝紫渐变 + 玻璃卡片） */
     body.dark {
-        --primary: #38bdf8;
-        --primary-hover: #818cf8;
-        --bg: #0a0f1f;
-        --card: rgba(255,255,255,.045);
-        --text: #e6ecf5;
-        --text-sec: #8ea0bd;
-        --border: rgba(255,255,255,.12);
-        --radius-card: 16px;
+        --primary: #0a84ff;
+        --primary-hover: #0071e3;
+        --bg: #000000;
+        --card: #1c1c1e;
+        --text: #f5f5f7;
+        --text-sec: #98989d;
+        --border: #38383a;
     }
-    body.dark {
-        background:
-            radial-gradient(1200px 700px at 85% -10%, rgba(129,140,248,.22), transparent 55%),
-            radial-gradient(900px 600px at -10% 30%, rgba(56,189,248,.14), transparent 50%),
-            linear-gradient(165deg, #0a0f1f 0%, #111a35 55%, #1a1140 100%);
-        background-attachment: fixed;
-    }
-    body.dark .card, body.dark .emby-card, body.dark .table-wrapper {
-        background: rgba(255,255,255,.045);
-        backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
-        border: 1px solid rgba(255,255,255,.09);
-        box-shadow: 0 8px 28px rgba(2,6,18,.35);
-    }
-    body.dark .emby-card:hover { box-shadow: 0 10px 34px rgba(129,140,248,.16); transform: translateY(-2px); }
-    body.dark input, body.dark select, body.dark textarea {
-        background: rgba(255,255,255,.055);
-        color: #e6ecf5;
-        border: 1px solid rgba(255,255,255,.12);
-    }
-    body.dark input:focus, body.dark select:focus, body.dark textarea:focus {
-        border-color: #818cf8;
-        box-shadow: 0 0 0 3px rgba(129,140,248,.15);
-    }
-    body.dark .chart-wrap, body.dark .icon-grid { background: rgba(255,255,255,.035); border-color: rgba(255,255,255,.1); }
-    body.dark th { background: rgba(255,255,255,.04); }
-    body.dark tr:hover td { background: rgba(255,255,255,.03); }
-    body.dark .search-input, body.dark .action-group { background: rgba(255,255,255,.04); }
-    body.dark .ping-badge { background: rgba(255,255,255,.05); color: var(--text-sec); }
 
     * { box-sizing: border-box; touch-action: manipulation; }
     body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; -webkit-text-size-adjust: 100%; transition: background-color 0.3s, color 0.3s; }
@@ -107,7 +76,7 @@
     .btn-dns:hover { background: rgba(52,199,89,.08); }
     .btn-dns svg { width: 15px; height: 15px; }
 
-    /* 暗色输入框规则已在上方 body.dark 覆盖块内定义 */
+    body.dark input, body.dark select, body.dark textarea { background: #1c1c1e; color: #f5f5f7; border: 1px solid #38383a; }
 
     .search-input { padding: 10px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 14px; width: 260px; transition: 0.3s; }
 
@@ -169,12 +138,6 @@
     .stat-cell .lbl { font-size: 11px; color: var(--text-sec); margin-top: 4px; }
     .empty { text-align: center; color: var(--text-sec); font-size: 13px; padding: 20px 0; }
 
-    .cfg-collapse { padding: 14px 16px; }
-    .cfg-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; user-select: none; }
-    .cfg-arrow { font-size: 16px; color: var(--text-sec); transition: transform .25s ease; display: inline-block; }
-    .acc-tab { flex:1; padding:10px 0; border:1px solid var(--border); border-radius:10px; background:var(--bg); color:var(--text-sec); font-size:13px; font-weight:600; cursor:pointer; transition:all .2s; }
-    .acc-tab.on { background:var(--primary); color:#fff; border-color:var(--primary); }
-
     /* 订阅者列表 */
     .sub-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); margin-bottom: 8px; }
     .sub-item .sub-pw { font-weight: 600; font-size: 13px; font-family: monospace; }
@@ -188,7 +151,7 @@
 
     /* 登录页 */
     #loginPage { display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; }
-    .login-box { background: var(--card); padding: 40px 30px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); text-align: center; width: 100%; max-width: 360px; overflow-x: hidden; }
+    .login-box { background: var(--card); padding: 40px 30px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); text-align: center; width: 100%; max-width: 360px; }
     .login-box .logo-icon { width: 64px; height: 64px; border-radius: 16px; background: linear-gradient(135deg, #00c6ff, #0072ff); margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; color: #fff; box-shadow: 0 8px 24px rgba(0,180,255,.35); }
     .login-box .logo-icon svg { width: 30px; height: 30px; }
     .login-box h2 { margin: 0 0 6px 0; font-size: 22px; font-weight: 700; }
@@ -226,7 +189,7 @@
 
     /* Modal 通用 */
     .modal-mask { display: none; position: fixed; inset: 0; z-index: 11000; background: rgba(0,0,0,.5); backdrop-filter: blur(5px); overflow-y: auto; padding: 16px; }
-    .modal-box { width: min(640px, 100%); margin: 8vh auto; background: var(--card); border-radius: 18px; padding: 22px; box-shadow: 0 10px 40px rgba(0,0,0,.2); overflow-x: hidden; }
+    .modal-box { max-width: 640px; margin: 8vh auto; background: var(--card); border-radius: 18px; padding: 22px; box-shadow: 0 10px 40px rgba(0,0,0,.2); }
     .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
     .modal-head h2 { margin: 0; font-size: 19px; display: flex; align-items: center; gap: 8px; }
     .modal-close { background: transparent; border: none; cursor: pointer; color: var(--text-sec); display: inline-flex; padding: 4px; }
@@ -238,6 +201,14 @@
     .target-row .target-input { margin-bottom: 0; }
     .target-rm { flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: #ff3b30; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
     .target-rm svg { width: 14px; height: 14px; }
+
+    /* 伪装设备请求头：双列表单（窄屏自动单列） */
+    .fake-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 560px) {
+        .fake-grid { grid-template-columns: 1fr; }
+    }
+    .fake-section { background: rgba(120,120,120,0.05); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-top: 14px; }
+    .fake-section .fake-tip { font-size: 12px; line-height: 1.6; color: var(--text-sec); margin-bottom: 10px; }
 
     @media (max-width: 768px) {
         body { padding: 12px; }
@@ -255,9 +226,6 @@
         .rtt-label { display: none; }
         #themeToggle svg { width: 15px; height: 15px; }
         .container { padding-top: 118px; }
-        .modal-mask { padding: 10px; }
-        .modal-box { padding: 18px; border-radius: 16px; }
-        .modal-box input, .modal-box select { font-size: 15px; }
     }
     </style>
 </head>
@@ -290,62 +258,12 @@
         </div>
         <div class="topbar-right">
             <button class="pill-btn" onclick="showStats()" title="查看今日播放统计"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg> 统计</button>
+            <button class="pill-btn" onclick="openAccount()" title="账户设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.2 4.2l2.8 2.8M17 17l2.8 2.8M1 12h4M19 12h4M4.2 19.8L7 17M17 7l2.8-2.8"/></svg> 账户</button>
             <button class="pill-close" onclick="confirmLogout()" title="退出系统"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </div>
     </div>
 
     <div class="container">
-        <!-- 实时速率仪表盘 -->
-        <div class="card" id="rateCard" style="display:none;">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-                <h2 style="margin:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3v6M21 3h-6M3 21v-6M3 21h6"/><path d="M21 8l-6-6M3 16l6 6"/></svg> 实时速率</h2>
-                <span id="rateTotal" style="font-size:15px;font-weight:600;color:var(--primary);">--</span>
-            </div>
-            <div style="display:flex; align-items:center; gap:16px; margin-top:12px; flex-wrap:wrap;">
-                <canvas id="rateChart" width="300" height="60" style="flex:1; min-width:220px; max-width:460px; background:var(--bg); border-radius:10px;"></canvas>
-                <div id="rateNodes" style="font-size:12px; color:var(--text-sec); flex:1; min-width:180px; line-height:1.9;"></div>
-            </div>
-        </div>
-
-        <!-- 通知设置（Bark · iOS 系统通知）- 默认折叠，点击展开 -->
-        <div class="card cfg-collapse">
-            <div class="cfg-head" onclick="toggleNotify()">
-                <h2 style="margin:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-9.9 4.6c0 2.6 1.8 4.4 1.8 5.4a2.4 2.4 0 1 0 4.8 0c0-1 .4-1.6 .4-2.2"/><circle cx="12" cy="4.5" r="1.5"/><path d="M19 15c0 1.5 1 2 1 3.5 0 1.5-1 2.5-2.5 2.5a5 5 0 0 1-5-5"/></svg> 通知设置（Bark · iOS 系统通知）</h2>
-                <span class="cfg-arrow" id="notifyArrow">▸</span>
-            </div>
-            <div id="notifyBody" style="display:none; margin-top:14px; border-top:1px dashed var(--border); padding-top:14px;">
-            <div style="font-size:13px;color:var(--text-sec);margin-bottom:14px;line-height:1.6;">手机 App Store 免费安装 <b>Bark</b>，复制设备 Key 填到下面，观看倒计时报警会推送到 iOS 通知栏（无需开发者账号）。</div>
-            <div class="row2" style="margin-bottom:14px;">
-                <div class="field">
-                    <label>Bark 设备 Key</label>
-                    <input id="cfgBarkKey" placeholder="粘贴 Bark 设备 Key（留空不修改）">
-                </div>
-                <div class="field">
-                    <label>推送级别</label>
-                    <select id="cfgBarkLevel">
-                        <option value="active">active（常规）</option>
-                        <option value="timeSensitive">timeSensitive（时效）</option>
-                        <option value="critical">critical（强提醒）</option>
-                        <option value="passive">passive（静默）</option>
-                    </select>
-                </div>
-            </div>
-            <div class="field" style="margin-bottom:14px;">
-                <label>Bark 服务地址（默认官方 api.day.app，自建才改）</label>
-                <input id="cfgBarkServer" placeholder="https://api.day.app">
-            </div>
-            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-                <label class="switch-label" style="margin:0;">
-                    <span class="switch on" id="cfgBarkNotify" onclick="this.classList.toggle('on')"></span> 报警推送
-                </label>
-                <button class="btn-ghost" onclick="testNotify('bark')">测试 Bark 通知</button>
-                <button class="btn-ghost" onclick="testNotify('bark', true)">60 秒后测试通知</button>
-                <button class="btn-ghost" onclick="testNotify('tg')">测试 Telegram</button>
-                <button class="btn-submit" onclick="saveNotify()" style="margin-left:auto;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg> 保存通知设置</button>
-            </div>
-            </div>
-        </div>
-
         <!-- 反代配置（前后端分离） -->
         <div class="card">
             <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 1 1 0-8 5 5 0 0 1 9.6 1.3A3.5 3.5 0 0 1 17 18H7z"/></svg> 反代配置（前后端分离）</h2>
@@ -369,23 +287,6 @@
                 </select>
                 <div style="font-size:12px;color:var(--text-sec);margin-top:6px;">IPv6 优先适合纯 IPv6 / 双栈机器且源站支持 IPv6 的场景；目标无对应地址族时自动回退。单个节点可在「反代节点 → 编辑」中单独覆盖。</div>
             </div>
-            <div style="border-top:1px dashed var(--border); margin-top:16px; padding-top:14px;">
-                <h3 style="margin:0 0 10px; font-size:15px;">观看倒计时报警推送（Telegram）</h3>
-                <div style="font-size:13px;color:var(--text-sec);margin-bottom:14px;line-height:1.7;">节点超过设定的观看间隔（7/14/21 天）没有真实观看时，面板内红色报警，同时可推送 Telegram 提醒。</div>
-                <div class="row2" style="margin-bottom:14px;">
-                    <div class="field">
-                        <label>Bot Token</label>
-                        <input id="cfgTgToken" placeholder="@BotFather 创建获取（留空关闭推送）">
-                    </div>
-                    <div class="field">
-                        <label>管理员 Chat ID</label>
-                        <input id="cfgTgChatId" placeholder="向 @userinfobot 发 /start 获取">
-                    </div>
-                </div>
-                <label class="switch-label" style="margin-bottom:14px;">
-                    <span class="switch on" id="cfgTgNotify" onclick="this.classList.toggle('on')"></span> 报警推送
-                </label>
-            </div>
             <button class="btn-submit" onclick="saveConfig()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg> 保存反代配置</button>
         </div>
 
@@ -406,6 +307,17 @@
             <div id="nodeGrid" class="node-grid">
                 <div class="empty" style="grid-column:1/-1;">加载节点中...</div>
             </div>
+        </div>
+
+        <!-- 订阅者 -->
+        <div class="card" id="subCard">
+            <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 8V4M8 4h8"/><circle cx="9.5" cy="13" r="1" fill="currentColor"/><circle cx="14.5" cy="13" r="1" fill="currentColor"/><path d="M2 13v3M22 13v3"/></svg> 订阅者管理</h2>
+            <div style="font-size:13px;color:var(--text-sec);margin-bottom:14px;">订阅者可用订阅密码登录面板（只读），适合分享给朋友。</div>
+            <div style="display:flex; gap:10px; margin-bottom:12px;">
+                <input id="subInput" placeholder="输入订阅密码" style="flex:1; padding:11px 14px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:14px;">
+                <button class="btn-submit" onclick="addSub()" style="padding:11px 18px;">添加</button>
+            </div>
+            <div id="subList"></div>
         </div>
 
         <!-- 今日统计 -->
@@ -449,6 +361,44 @@
                     <option value="strict">强力（防403）</option>
                 </select>
             </div>
+            <div class="fake-section">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                    <div style="font-size:14px; font-weight:600; color:var(--text-sec);">伪装设备请求头</div>
+                    <label class="switch-label" style="margin:0;">
+                        <span class="switch" id="rtFake" onclick="this.classList.toggle('on')"></span> 开启伪装
+                    </label>
+                </div>
+                <div class="fake-tip">把该节点请求伪装成指定 Emby 客户端设备（UA / 授权头 / 请求体身份字段全部改写）。</div>
+                <div class="field" style="margin-bottom:10px;">
+                    <label>快速模板（可选）</label>
+                    <select id="rtFakeTpl" onchange="applyFakeTpl(this.value)">
+                        <option value="">— 手动填写 / 清空模板 —</option>
+                        <option value="senplayer">SenPlayer（iPhone）</option>
+                        <option value="eplayerx">EplayerX（iPhone 17 Pro Max）</option>
+                        <option value="forward">Forward（iPhone）</option>
+                        <option value="hills">Hills（PD2505）</option>
+                        <option value="yamby">Yamby（vivo-V2505A）</option>
+                    </select>
+                </div>
+                <div class="fake-grid">
+                    <div class="field" style="margin-bottom:0;">
+                        <label>Client（客户端名）</label>
+                        <input type="text" id="rtFakeClient" placeholder="如 Emby">
+                    </div>
+                    <div class="field" style="margin-bottom:0;">
+                        <label>Version（版本号）</label>
+                        <input type="text" id="rtFakeVersion" placeholder="如 4.8.10.0">
+                    </div>
+                </div>
+                <div class="field" style="margin-top:10px; margin-bottom:0;">
+                    <label>Device（设备名）</label>
+                    <input type="text" id="rtFakeDevice" placeholder="如 iPhone / Xiaomi 14">
+                </div>
+                <div class="field" style="margin-top:10px; margin-bottom:0;">
+                    <label>User-Agent（伪装 UA）</label>
+                    <input type="text" id="rtFakeUa" placeholder="如 Emby/4.8.10.0 (iPhone; iOS 18.0)">
+                </div>
+            </div>
             <div class="field">
                 <label>IPv6 / IPv4 优先（可选）</label>
                 <select id="rtNetPref">
@@ -468,11 +418,6 @@
                 <div id="targetInputs" style="display:flex; flex-direction:column; gap:10px;"></div>
                 <button type="button" class="btn-ghost" onclick="addTargetRow()" style="margin-top:8px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> 添加备用线路</button>
             </div>
-            <div class="field" style="margin-bottom:12px;">
-                <label>观看倒计时（保号提醒）</label>
-                <input type="number" id="rtWatchDays" min="0" step="1" placeholder="0 = 关闭，如 21 表示 21 天">
-                <div style="font-size:12px;color:var(--text-sec);margin-top:6px;">输入任意天数（0 = 关闭，可填小数如 14.5）。节点超过该间隔没有真实观看即报警提醒（面板 + Telegram + Bark）。开启后节点卡片实时显示上次观看与剩余天数。</div>
-            </div>
             <label class="switch-label">
                 <span class="switch" id="rtCache" onclick="this.classList.toggle('on')"></span> 开启海报及静态资源缓存
             </label>
@@ -483,37 +428,43 @@
 
 <!-- ==================== 账户 Modal ==================== -->
 <div id="accountModal" class="modal-mask">
-    <div class="modal-box" style="max-width:460px;">
+    <div class="modal-box" style="max-width:420px;">
         <div class="modal-head">
             <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.2 4.2l2.8 2.8M17 17l2.8 2.8M1 12h4M19 12h4M4.2 19.8L7 17M17 7l2.8-2.8"/></svg> 账户设置</h2>
             <button class="modal-close" onclick="closeAccount()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </div>
-        <div style="display:flex; gap:8px; margin-bottom:16px; border-bottom:1px solid var(--border); padding-bottom:12px;">
-            <button class="acc-tab on" id="accTabMe" onclick="switchAccTab('me')">我</button>
-            <button class="acc-tab" id="accTabSub" onclick="switchAccTab('sub')">订阅者管理</button>
+        <div id="accRole" style="font-size:13px; color:var(--text-sec); margin-bottom:14px;">当前角色：加载中</div>
+        <div class="field" style="margin-bottom:16px;">
+            <label>修改网页登录密码（留空则保持原密码登录）</label>
+            <input type="password" id="newPass" placeholder="新密码（至少 4 位）">
         </div>
-        <div id="accTabMeBody">
-            <div id="accRole" style="font-size:13px; color:var(--text-sec); margin-bottom:14px;">当前角色：加载中</div>
-            <div class="field" style="margin-bottom:16px;">
-                <label>修改网页登录密码（留空则保持原密码登录）</label>
-                <input type="password" id="newPass" placeholder="新密码（至少 4 位）">
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button class="btn-ghost" onclick="closeAccount()">取消</button>
+            <button class="btn-submit" onclick="savePass()">保存密码</button>
+        </div>
+        <div style="border-top:1px dashed var(--border); margin-top:18px; padding-top:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="font-size:13px;font-weight:600;color:var(--text);">反代 Token</span>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-sec);">
+                    <input type="checkbox" id="ptOn" style="accent-color:var(--accent);width:16px;height:16px;cursor:pointer;"> 开启
+                </label>
             </div>
-            <div style="display:flex; gap:10px; justify-content:flex-end;">
-                <button class="btn-ghost" onclick="closeAccount()">取消</button>
-                <button class="btn-submit" onclick="savePass()">保存密码</button>
+            <div style="font-size:12px;color:var(--text-sec);margin-bottom:10px;line-height:1.7;">开启后所有节点链接需带 <b style="color:var(--accent);">/密钥/</b> 前缀才可反代；直接访问不带前缀的路径会跳转 <b style="color:var(--accent);">/catch</b> 并记录来访 IP。</div>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="ptKey" placeholder="自定义密钥（3-32 位字母数字，如 lhazkj）" style="flex:1; padding:11px 14px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:14px;">
+                <button class="btn-submit" onclick="saveProxyToken()" style="padding:11px 18px;">保存</button>
             </div>
-            <div style="border-top:1px dashed var(--border); margin-top:18px; padding-top:14px; display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-size:13px; color:var(--text-sec);">退出当前登录</span>
-                <button class="btn-danger" onclick="confirmLogout()" style="padding:8px 16px; font-size:13px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg> 退出</button>
+            <div style="margin-top:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:13px;font-weight:600;color:var(--text);">来访记录 IP</span>
+                    <button class="btn-ghost" style="font-size:12px;padding:5px 12px;" onclick="loadPtHits()">刷新</button>
+                </div>
+                <div id="ptHits" style="font-size:12px;color:var(--text-sec);">加载中…</div>
             </div>
         </div>
-        <div id="accTabSubBody" style="display:none;">
-            <div style="font-size:13px;color:var(--text-sec);margin-bottom:12px;">订阅者可用订阅密码登录面板（只读），适合分享给朋友。</div>
-            <div style="display:flex; gap:10px; margin-bottom:12px;">
-                <input id="subInput" placeholder="输入订阅密码" style="flex:1; padding:11px 14px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:14px;">
-                <button class="btn-submit" onclick="addSub()" style="padding:11px 18px;">添加</button>
-            </div>
-            <div id="subList"></div>
+        <div style="border-top:1px dashed var(--border); margin-top:18px; padding-top:14px; display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:13px; color:var(--text-sec);">退出当前登录</span>
+            <button class="btn-danger" onclick="confirmLogout()" style="padding:8px 16px; font-size:13px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg> 退出</button>
         </div>
     </div>
 </div>
@@ -620,8 +571,6 @@ function enterPanel() {
   $('topbarLogo').src = 'https://raw.githubusercontent.com/MakkaPakka518/Icon/refs/heads/main/MAKKA_EMBY.JPG';
   $('accRole').textContent = '当前角色：' + (role === 'admin' ? '管理员' : '订阅者');
   loadAll();
-  startRatePoll();
-  startWatchPoll();
 }
 
 async function init() {
@@ -650,185 +599,21 @@ async function updateRTT() {
   }
 }
 
-/* ============ 观看倒计时（保号提醒） ============ */
-let watchTimer = null;
-let watchSeenAlerts = {};
-function fmtLeft(ms) {
-  if (ms < 0) return '0';
-  const h = Math.floor(ms / 3600000);
-  const d = Math.floor(h / 24);
-  if (d > 0) return d + ' 天 ' + (h % 24) + ' 时';
-  if (h > 0) return h + ' 时 ' + Math.floor((ms % 3600000) / 60000) + ' 分';
-  return Math.floor(ms / 60000) + ' 分';
-}
-function watchBadgeHtml(it) {
-  if (!it || !it.watchDays) return '<span style="color:var(--text-sec);">未开启</span>';
-  if (it.overdue) {
-    const over = it.elapsedDays == null ? '从未观看' : '已逾期 ' + (Math.round((it.elapsedDays - it.watchDays) * 10) / 10) + ' 天';
-    return '<span style="color:#ff3b30;font-weight:700;">⚠ ' + over + '</span>';
-  }
-  return '<span style="color:var(--text-sec);">上次 ' + (it.elapsedDays == null ? '从未' : it.elapsedDays + ' 天前') + '</span> · <span style="color:#34c759;">距 ' + it.watchDays + ' 天还有 ' + fmtLeft(it.leftMs) + '</span>';
-}
-function startWatchPoll() {
-  if (role !== 'admin') return;
-  if (watchTimer) clearInterval(watchTimer);
-  const tick = async () => {
-    try {
-      const d = await api('/api/watch/status');
-      const items = d.items || [];
-      for (const it of items) {
-        const el = document.querySelector('.watch-badge[data-watch="' + CSS.escape(it.prefix) + '"]');
-        if (el) el.innerHTML = watchBadgeHtml(it);
-      }
-      // 新报警 toast 提示
-      const alerts = d.alerts || [];
-      for (const a of alerts) {
-        if (!watchSeenAlerts[a.time]) {
-          watchSeenAlerts[a.time] = true;
-          toast('<span style="color:#ff3b30;font-weight:600;">⚠</span> ' + a.detail);
-        }
-      }
-      const keys = Object.keys(watchSeenAlerts).sort();
-      while (keys.length > 30) delete watchSeenAlerts[keys.shift()];
-    } catch (e) {}
-  };
-  tick();
-  watchTimer = setInterval(tick, 30000);
-}
-
-/* ============ 实时速率仪表盘 ============ */
-let rateTimer = null;
-function fmtRate(b) {
-  if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB/s';
-  if (b >= 1024) return (b / 1024).toFixed(0) + ' KB/s';
-  return b + ' B/s';
-}
-function startRatePoll() {
-  if (role !== 'admin') return;
-  const card = $('rateCard'); if (card) card.style.display = '';
-  if (rateTimer) clearInterval(rateTimer);
-  const tick = async () => {
-    try {
-      const d = await api('/api/rates');
-      const rates = d.rates || {};
-      const prefixes = Object.keys(rates);
-      const cv = $('rateChart'), ctx = cv.getContext('2d');
-      const W = cv.width = cv.clientWidth * 2 || 600, H = cv.height = 60 * 2;
-      ctx.clearRect(0, 0, W, H);
-      let total = 0;
-      const lines = prefixes.map(p => {
-        const arr = rates[p].down || [];
-        const last = arr.length ? arr[arr.length - 1] : 0;
-        total += last;
-        return '<b>/' + p + '</b> ' + fmtRate(last);
-      });
-      $('rateTotal').textContent = '总下行 ' + fmtRate(total);
-      $('rateNodes').innerHTML = lines.join('&nbsp;&nbsp;') || '<span style="color:var(--text-sec);">暂无流量</span>';
-      const series = new Array(60).fill(0);
-      for (const p of prefixes) {
-        const arr = rates[p].down || [];
-        for (let i = 0; i < Math.min(60, arr.length); i++) series[i] += arr[i] || 0;
-      }
-      const max = Math.max.apply(null, series.concat([1]));
-      ctx.strokeStyle = '#0071e3'; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.beginPath();
-      for (let i = 0; i < 60; i++) {
-        const x = (i / 59) * W, y = H - (series[i] / max) * (H - 10) - 5;
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    } catch (e) {}
-  };
-  tick();
-  rateTimer = setInterval(tick, 2000);
-}
-
-/* ============ 部署彩蛋动画（成功：彩色粒子；失败：红色警示粒子） ============ */
-function confetti(kind) {
-  const cv = document.createElement('canvas');
-  cv.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:99999;';
-  document.body.appendChild(cv);
-  const ctx = cv.getContext('2d');
-  const W = cv.width = innerWidth, H = cv.height = innerHeight;
-  const colors = kind === 'ok'
-    ? ['#ff5f6d', '#ffc371', '#36d1dc', '#5b86e5', '#00c9a7', '#f7971e', '#a8e063']
-    : ['#ff3b30', '#ff6b6b', '#c0392b', '#e74c3c', '#ff8a80'];
-  const ps = [];
-  const N = kind === 'ok' ? 140 : 90;
-  const cx = W / 2, cy = H * 0.32;
-  for (let i = 0; i < N; i++) ps.push({
-    x: cx + (Math.random() - 0.5) * 240, y: cy + (Math.random() - 0.5) * 140,
-    vx: (Math.random() - 0.5) * 14, vy: -5 - Math.random() * 11,
-    g: 0.32 + Math.random() * 0.3, s: 4 + Math.random() * 7,
-    r: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 0.3,
-    color: colors[(Math.random() * colors.length) | 0], life: 1
-  });
-  let frames = 0;
-  (function loop() {
-    frames++;
-    ctx.clearRect(0, 0, W, H);
-    let alive = 0;
-    for (const p of ps) {
-      if (p.life <= 0) continue;
-      p.x += p.vx; p.y += p.vy; p.vy += p.g; p.r += p.vr; p.life -= 0.008;
-      alive++;
-      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
-      ctx.globalAlpha = Math.max(0, p.life);
-      ctx.fillStyle = p.color;
-      ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * 0.6);
-      ctx.restore();
-    }
-    if (alive > 0 && frames < 240) requestAnimationFrame(loop);
-    else { try { cv.remove(); } catch (e) {} }
-  })();
-  setTimeout(() => { try { cv.remove(); } catch (e) {} }, 3800);
-}
-
 /* ============ 反代配置（前后端分离） ============ */
 async function loadConfig() {
-  if (role !== 'admin') { $('cfgFrontend').value = ''; $('cfgBackend').value = ''; $('cfgNetPref').value = 'auto'; $('cfgTgToken').value = ''; $('cfgTgChatId').value = ''; $('cfgTgNotify').classList.add('on'); $('cfgBarkKey').value = ''; $('cfgBarkServer').value = 'https://api.day.app'; $('cfgBarkLevel').value = 'active'; $('cfgBarkNotify').classList.add('on'); return; }
+  if (role !== 'admin') { $('cfgFrontend').value = ''; $('cfgBackend').value = ''; $('cfgNetPref').value = 'auto'; return; }
   try {
     const data = await api('/api/config');
     $('cfgFrontend').value = data.frontendDomain || '';
     $('cfgBackend').value = data.backendDomain || '';
     $('cfgNetPref').value = ['auto', 'v6', 'v4'].includes(data.networkPreference) ? data.networkPreference : 'auto';
-    $('cfgTgToken').value = ''; // Token 不回显：留空 = 保持原配置
-    $('cfgTgToken').placeholder = data.tgToken ? '已配置（留空保持）' : '@BotFather 创建获取';
-    $('cfgTgChatId').value = data.tgChatId || '';
-    $('cfgTgNotify').classList.toggle('on', data.tgNotify !== false);
-    $('cfgBarkKey').value = '';
-    $('cfgBarkKey').placeholder = data.barkKey ? '已配置（留空保持）' : '粘贴 Bark 设备 Key（留空不修改）';
-    $('cfgBarkServer').value = data.barkServer || 'https://api.day.app';
-    $('cfgBarkLevel').value = ['active', 'timeSensitive', 'critical', 'passive'].includes(data.barkLevel) ? data.barkLevel : 'active';
-    $('cfgBarkNotify').classList.toggle('on', data.barkNotify !== false);
   } catch (e) {}
-}
-
-async function testNotify(type, delay) {
-  if (role !== 'admin') return toast(I.warn + ' 仅管理员可操作');
-  try {
-    const r = await api('/api/test-notify', { method: 'POST', body: JSON.stringify({ type, delay: !!delay }) });
-    toast(r.success ? I.check + ' ' + (r.msg || '已发送') : I.warn + ' ' + (r.msg || '发送失败'));
-  } catch (e) { toast(I.warn + ' 测试请求失败'); }
-}
-
-async function saveNotify() {
-  if (role !== 'admin') return toast(I.warn + ' 仅管理员可操作');
-  try {
-    const bk = $('cfgBarkKey').value.trim();
-    const payload = { barkServer: $('cfgBarkServer').value.trim(), barkNotify: $('cfgBarkNotify').classList.contains('on'), barkLevel: $('cfgBarkLevel').value };
-    if (bk && !bk.startsWith('已配置')) payload.barkKey = bk;
-    await api('/api/config', { method: 'POST', body: JSON.stringify(payload) });
-    toast(I.check + ' 通知设置已保存');
-  } catch (e) { toast(I.warn + ' 保存失败'); }
 }
 
 async function saveConfig() {
   if (role !== 'admin') return toast(I.warn + ' 仅管理员可操作');
   try {
-    const payload = { frontendDomain: $('cfgFrontend').value.trim(), backendDomain: $('cfgBackend').value.trim(), networkPreference: $('cfgNetPref').value, tgToken: $('cfgTgToken').value.trim(), tgChatId: $('cfgTgChatId').value.trim(), tgNotify: $('cfgTgNotify').classList.contains('on'), barkServer: $('cfgBarkServer').value.trim(), barkNotify: $('cfgBarkNotify').classList.contains('on'), barkLevel: $('cfgBarkLevel').value };
-    const bk = $('cfgBarkKey').value.trim();
-    if (bk && !bk.startsWith('已配置')) payload.barkKey = bk;
-    await api('/api/config', { method: 'POST', body: JSON.stringify(payload) });
+    await api('/api/config', { method: 'POST', body: JSON.stringify({ frontendDomain: $('cfgFrontend').value.trim(), backendDomain: $('cfgBackend').value.trim(), networkPreference: $('cfgNetPref').value }) });
     toast(I.check + ' 反代配置已保存');
   } catch (e) { toast(I.warn + ' 保存失败'); }
 }
@@ -900,20 +685,16 @@ function renderRoutes() {
         <span class="badge" style="${r.cache_img ? 'background:rgba(52,199,89,.12);color:#34c759;' : ''}">${r.cache_img ? '已开启' : '关闭'}</span>
       </div>
       <div class="info-row">
-        <span class="info-label">观看倒计时</span>
-        <span class="badge watch-badge" data-watch="${escapeHtml(r.prefix)}" style="min-width:0;">${r.watchDays && r.watchDays !== '0' ? '加载中…' : '未开启'}</span>
-      </div>
-      <div class="info-row">
         <span class="info-label">源站</span>
         <span style="display:flex;align-items:center;gap:6px;min-width:0;">${originRow}</span>
       </div>
       <div class="info-row">
         <span class="info-label">入口</span>
-        <span class="entry-text">${location.origin}/${escapeHtml(r.prefix)}</span>
+        <span class="entry-text">${entryUrl(escapeHtml(r.prefix))}</span>
       </div>
       <div class="card-footer">
         ${pingBadge}
-        <button class="btn-dns" onclick="copyTxt('${location.origin}/${escapeHtml(r.prefix)}')" title="复制入口链接">${I.copy} 复制</button>
+        <button class="btn-dns" onclick="copyTxt('${entryUrl(escapeHtml(r.prefix))}')" title="复制入口链接">${I.copy} 复制</button>
         ${adminBtns}
       </div>
     </div>
@@ -1010,6 +791,31 @@ function pickIcon(el) {
   renderIconGrid($('rtIconSearch').value);
 }
 
+/* 伪装设备请求头：快速模板 */
+const FAKE_TPL = {
+  senplayer: { client: 'SenPlayer', version: '6.0.0', device: 'iPhone', ua: 'SenPlayer/6.0.0' },
+  eplayerx: { client: 'EplayerX', version: '10.0.7', device: 'iPhone 17 Pro Max', ua: 'EplayerX/39' },
+  forward: { client: 'Forward', version: '1.3.15', device: 'iPhone', ua: 'Forward-Standard/1.3.15' },
+  hills: { client: 'Hills', version: '1.6.0', device: 'PD2505', ua: 'Hills/1.6.0 (android; 16)' },
+  yamby: { client: 'Yamby', version: '2.0.0.5', device: 'vivo-V2505A', ua: 'Yamby/2.0.0.5(Android)' },
+};
+function applyFakeTpl(key) {
+  if (!key || !FAKE_TPL[key]) return;
+  const t = FAKE_TPL[key];
+  $('rtFakeClient').value = t.client;
+  $('rtFakeVersion').value = t.version;
+  $('rtFakeDevice').value = t.device;
+  $('rtFakeUa').value = t.ua;
+}
+function clearFakeFields() {
+  $('rtFake').classList.remove('on');
+  $('rtFakeTpl').value = '';
+  $('rtFakeClient').value = '';
+  $('rtFakeVersion').value = '';
+  $('rtFakeDevice').value = '';
+  $('rtFakeUa').value = '';
+}
+
 function openNodeModal(prefix) {
   editingPrefix = null;
   $('nodeModalTitle').innerHTML = I.pencil + ' 添加节点';
@@ -1024,6 +830,7 @@ function openNodeModal(prefix) {
   selectedIcon = '';
   $('rtIconSearch').value = '';
   renderIconGrid('');
+  clearFakeFields();
   if (prefix) {
     const r = routes.find(x => x.prefix === prefix);
     if (r) {
@@ -1034,8 +841,12 @@ function openNodeModal(prefix) {
       $('rtMode').value = r.mode || 'off';
       $('rtNetPref').value = r.v6 || 'auto';
       $('rtCache').classList.toggle('on', !!r.cache_img);
+      $('rtFake').classList.toggle('on', !!r.fake);
+      $('rtFakeClient').value = r.customClient || '';
+      $('rtFakeVersion').value = r.customVersion || '';
+      $('rtFakeDevice').value = r.customDevice || '';
+      $('rtFakeUa').value = r.customUa || '';
       selectedIcon = r.icon || '';
-      $('rtWatchDays').value = (r.watchDays && r.watchDays != '0') ? String(r.watchDays) : '';
       if (selectedIcon) $('rtIconSearch').value = selectedIcon;
       renderIconGrid($('rtIconSearch').value);
       const targets = r.target.split(',').map(s => s.trim()).filter(Boolean);
@@ -1044,6 +855,10 @@ function openNodeModal(prefix) {
     }
   }
   $('nodeModal').style.display = 'flex';
+  const maskEl = $('nodeModal');
+  maskEl.scrollTop = 0;
+  const boxEl = maskEl.querySelector('.modal-box');
+  if (boxEl) boxEl.scrollTop = 0;
   setTimeout(() => $('rtPrefix').focus(), 50);
 }
 
@@ -1060,17 +875,15 @@ $('addForm').addEventListener('submit', async (e) => {
   const mode = $('rtMode').value;
   const v6 = $('rtNetPref').value;
   const cache = $('rtCache').classList.contains('on');
+  const fake = $('rtFake').classList.contains('on');
   const btn = $('rtSubmitBtn');
   btn.disabled = true; btn.textContent = '保存中…';
   try {
-    const watchDays = $('rtWatchDays').value;
-    await api('/api/routes', { method: 'POST', body: JSON.stringify({ prefix, target, mode, cache_img: cache, icon: selectedIcon, v6, watchDays }) });
+    await api('/api/routes', { method: 'POST', body: JSON.stringify({ prefix, target, mode, cache_img: cache, icon: selectedIcon, v6, fake, customClient: $('rtFakeClient').value.trim(), customVersion: $('rtFakeVersion').value.trim(), customDevice: $('rtFakeDevice').value.trim(), customUa: $('rtFakeUa').value.trim() }) });
     toast(I.check + ' 节点已保存');
-    confetti('ok');
     closeNodeModal();
     loadRoutes();
-    startWatchPoll();
-  } catch (err) { toast(I.warn + ' 保存失败: ' + (err.message || '')); confetti('fail'); }
+  } catch (err) { toast(I.warn + ' 保存失败: ' + (err.message || '')); }
   finally { btn.disabled = false; btn.textContent = editingPrefix ? '保存修改' : '保存部署'; }
 });
 
@@ -1215,26 +1028,11 @@ async function loadStats() {
 function showStats() { loadStats(); document.getElementById('statsGrid').scrollIntoView({ behavior: 'smooth' }); }
 
 /* ============ 账户（修复：弹窗显示） ============ */
-function toggleNotify() {
-    const body = $('notifyBody'), arrow = $('notifyArrow');
-    const open = body.style.display !== 'none';
-    body.style.display = open ? 'none' : 'block';
-    arrow.style.transform = open ? 'rotate(0deg)' : 'rotate(90deg)';
-}
-
-function switchAccTab(tab) {
-    const me = tab === 'me';
-    $('accTabMe').classList.toggle('on', me);
-    $('accTabSub').classList.toggle('on', !me);
-    $('accTabMeBody').style.display = me ? 'block' : 'none';
-    $('accTabSubBody').style.display = me ? 'none' : 'block';
-    if (!me) loadSubs();
-}
-
 function openAccount() {
   if (role) $('accRole').textContent = '当前角色：' + (role === 'admin' ? '管理员' : '订阅者');
-  switchAccTab('me');
   $('accountModal').style.display = 'flex';
+  loadPtState();
+  loadPtHits();
 }
 function closeAccount() {
   $('accountModal').style.display = 'none';
@@ -1250,6 +1048,59 @@ async function savePass() {
     closeAccount();
   } catch (e) { toast(I.warn + ' 修改失败'); }
 }
+
+/* ============ 反代 Token ============ */
+let PT = { enabled: false, key: '' };
+function entryUrl(prefix) {
+  return `${location.origin}/${PT.enabled ? PT.key + '/' : ''}${prefix}`;
+}
+async function loadPtState() {
+  try {
+    const r = await api('/api/proxytoken');
+    if (r.success) PT = { enabled: !!r.enabled, key: r.key || '' };
+  } catch (e) {}
+  const on = $('ptOn');
+  if (on) on.checked = PT.enabled;
+  const k = $('ptKey');
+  if (k) k.value = PT.key || '';
+}
+async function saveProxyToken() {
+  if (role !== 'admin') return toast(I.warn + ' 仅管理员可设置反代 Token');
+  const enabled = $('ptOn').checked;
+  const key = $('ptKey').value.trim();
+  if (enabled && !/^[A-Za-z0-9]{3,32}$/.test(key)) return toast(I.warn + ' 密钥需 3-32 位字母数字');
+  try {
+    const r = await api('/api/account', { method: 'POST', body: JSON.stringify({ proxyToken: { enabled, key } }) });
+    if (r && !r.success) return toast(I.warn + ' ' + (r.error || '保存失败'));
+    toast(I.check + ' 反代 Token 已' + (enabled ? '开启，链接前缀 /' + key + '/' : '关闭'));
+    await loadPtState();
+    loadRoutes();
+  } catch (e) { toast(I.warn + ' 保存失败'); }
+}
+function fmtHitTs(ts) {
+  const d = new Date(ts + 8 * 3600000);
+  return String(d.getUTCFullYear()).slice(2) + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0') + ' ' + String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
+}
+async function loadPtHits() {
+  if (role !== 'admin') { $('ptHits').innerHTML = '<span style="color:var(--text-sec);">仅管理员可见</span>'; return; }
+  try {
+    const r = await api('/api/proxytoken/hits');
+    const hits = (r && r.hits) || [];
+    if (!hits.length) { $('ptHits').innerHTML = '<span style="color:var(--text-sec);">暂无记录</span>'; return; }
+    $('ptHits').innerHTML = hits.map(h => `<div style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--bg);">
+      <div style="color:var(--text);font-weight:600;font-size:13px;">${escapeHtml(h.ip)} <span style="color:var(--accent);font-weight:700;">×${h.times || 1}</span></div>
+      <div style="color:var(--text-sec);font-size:12px;word-break:break-all;margin-top:2px;">${escapeHtml(h.path || '')}</div>
+      <div style="color:var(--text-sec);font-size:11px;margin-top:2px;">${fmtHitTs(h.ts || 0)} · ${escapeHtml(String(h.ua || '').slice(0, 70))}</div>
+    </div>`).join('') + `<button class="btn-ghost" style="margin-top:6px;font-size:12px;" onclick="clearPtHits()">${I.trash || '🗑'} 清空记录</button>`;
+  } catch (e) { $('ptHits').innerHTML = '<span style="color:var(--text-sec);">加载失败</span>'; }
+}
+async function clearPtHits() {
+  try {
+    await api('/api/proxytoken/hits', { method: 'POST', body: JSON.stringify({ clear: true }) });
+    toast(I.check + ' 已清空来访记录');
+    loadPtHits();
+  } catch (e) { toast(I.warn + ' 清空失败'); }
+}
 $('accountModal').addEventListener('click', (e) => { if (e.target === $('accountModal')) closeAccount(); });
 $('nodeModal').addEventListener('click', (e) => { if (e.target === $('nodeModal')) closeNodeModal(); });
 
@@ -1264,6 +1115,7 @@ function loadAll() {
   loadSubs();
   loadStats();
   updateRTT();
+  loadPtState();
 }
 
 init();
