@@ -202,14 +202,6 @@
     .target-rm { flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: #ff3b30; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
     .target-rm svg { width: 14px; height: 14px; }
 
-    /* 伪装设备请求头：双列表单（窄屏自动单列） */
-    .fake-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    @media (max-width: 560px) {
-        .fake-grid { grid-template-columns: 1fr; }
-    }
-    .fake-section { background: rgba(120,120,120,0.05); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-top: 14px; }
-    .fake-section .fake-tip { font-size: 12px; line-height: 1.6; color: var(--text-sec); margin-bottom: 10px; }
-
     @media (max-width: 768px) {
         body { padding: 12px; }
         .card { padding: 16px; border-radius: 12px; margin-bottom: 16px; }
@@ -360,44 +352,6 @@
                     <option value="dual">兼容（双重透传）</option>
                     <option value="strict">强力（防403）</option>
                 </select>
-            </div>
-            <div class="fake-section">
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
-                    <div style="font-size:14px; font-weight:600; color:var(--text-sec);">伪装设备请求头</div>
-                    <label class="switch-label" style="margin:0;">
-                        <span class="switch" id="rtFake" onclick="this.classList.toggle('on')"></span> 开启伪装
-                    </label>
-                </div>
-                <div class="fake-tip">把该节点请求伪装成指定 Emby 客户端设备（UA / 授权头 / 请求体身份字段全部改写）。</div>
-                <div class="field" style="margin-bottom:10px;">
-                    <label>快速模板（可选）</label>
-                    <select id="rtFakeTpl" onchange="applyFakeTpl(this.value)">
-                        <option value="">— 手动填写 / 清空模板 —</option>
-                        <option value="senplayer">SenPlayer（iPhone）</option>
-                        <option value="eplayerx">EplayerX（iPhone 17 Pro Max）</option>
-                        <option value="forward">Forward（iPhone）</option>
-                        <option value="hills">Hills（PD2505）</option>
-                        <option value="yamby">Yamby（vivo-V2505A）</option>
-                    </select>
-                </div>
-                <div class="fake-grid">
-                    <div class="field" style="margin-bottom:0;">
-                        <label>Client（客户端名）</label>
-                        <input type="text" id="rtFakeClient" placeholder="如 Emby">
-                    </div>
-                    <div class="field" style="margin-bottom:0;">
-                        <label>Version（版本号）</label>
-                        <input type="text" id="rtFakeVersion" placeholder="如 4.8.10.0">
-                    </div>
-                </div>
-                <div class="field" style="margin-top:10px; margin-bottom:0;">
-                    <label>Device（设备名）</label>
-                    <input type="text" id="rtFakeDevice" placeholder="如 iPhone / Xiaomi 14">
-                </div>
-                <div class="field" style="margin-top:10px; margin-bottom:0;">
-                    <label>User-Agent（伪装 UA）</label>
-                    <input type="text" id="rtFakeUa" placeholder="如 Emby/4.8.10.0 (iPhone; iOS 18.0)">
-                </div>
             </div>
             <div class="field">
                 <label>IPv6 / IPv4 优先（可选）</label>
@@ -791,31 +745,6 @@ function pickIcon(el) {
   renderIconGrid($('rtIconSearch').value);
 }
 
-/* 伪装设备请求头：快速模板 */
-const FAKE_TPL = {
-  senplayer: { client: 'SenPlayer', version: '6.0.0', device: 'iPhone', ua: 'SenPlayer/6.0.0' },
-  eplayerx: { client: 'EplayerX', version: '10.0.7', device: 'iPhone 17 Pro Max', ua: 'EplayerX/39' },
-  forward: { client: 'Forward', version: '1.3.15', device: 'iPhone', ua: 'Forward-Standard/1.3.15' },
-  hills: { client: 'Hills', version: '1.6.0', device: 'PD2505', ua: 'Hills/1.6.0 (android; 16)' },
-  yamby: { client: 'Yamby', version: '2.0.0.5', device: 'vivo-V2505A', ua: 'Yamby/2.0.0.5(Android)' },
-};
-function applyFakeTpl(key) {
-  if (!key || !FAKE_TPL[key]) return;
-  const t = FAKE_TPL[key];
-  $('rtFakeClient').value = t.client;
-  $('rtFakeVersion').value = t.version;
-  $('rtFakeDevice').value = t.device;
-  $('rtFakeUa').value = t.ua;
-}
-function clearFakeFields() {
-  $('rtFake').classList.remove('on');
-  $('rtFakeTpl').value = '';
-  $('rtFakeClient').value = '';
-  $('rtFakeVersion').value = '';
-  $('rtFakeDevice').value = '';
-  $('rtFakeUa').value = '';
-}
-
 function openNodeModal(prefix) {
   editingPrefix = null;
   $('nodeModalTitle').innerHTML = I.pencil + ' 添加节点';
@@ -830,7 +759,6 @@ function openNodeModal(prefix) {
   selectedIcon = '';
   $('rtIconSearch').value = '';
   renderIconGrid('');
-  clearFakeFields();
   if (prefix) {
     const r = routes.find(x => x.prefix === prefix);
     if (r) {
@@ -841,11 +769,6 @@ function openNodeModal(prefix) {
       $('rtMode').value = r.mode || 'off';
       $('rtNetPref').value = r.v6 || 'auto';
       $('rtCache').classList.toggle('on', !!r.cache_img);
-      $('rtFake').classList.toggle('on', !!r.fake);
-      $('rtFakeClient').value = r.customClient || '';
-      $('rtFakeVersion').value = r.customVersion || '';
-      $('rtFakeDevice').value = r.customDevice || '';
-      $('rtFakeUa').value = r.customUa || '';
       selectedIcon = r.icon || '';
       if (selectedIcon) $('rtIconSearch').value = selectedIcon;
       renderIconGrid($('rtIconSearch').value);
@@ -875,11 +798,10 @@ $('addForm').addEventListener('submit', async (e) => {
   const mode = $('rtMode').value;
   const v6 = $('rtNetPref').value;
   const cache = $('rtCache').classList.contains('on');
-  const fake = $('rtFake').classList.contains('on');
   const btn = $('rtSubmitBtn');
   btn.disabled = true; btn.textContent = '保存中…';
   try {
-    await api('/api/routes', { method: 'POST', body: JSON.stringify({ prefix, target, mode, cache_img: cache, icon: selectedIcon, v6, fake, customClient: $('rtFakeClient').value.trim(), customVersion: $('rtFakeVersion').value.trim(), customDevice: $('rtFakeDevice').value.trim(), customUa: $('rtFakeUa').value.trim() }) });
+    await api('/api/routes', { method: 'POST', body: JSON.stringify({ prefix, target, mode, cache_img: cache, icon: selectedIcon, v6 }) });
     toast(I.check + ' 节点已保存');
     closeNodeModal();
     loadRoutes();
