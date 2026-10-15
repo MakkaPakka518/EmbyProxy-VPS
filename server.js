@@ -225,7 +225,7 @@ async function buildUpstreamCandidates(target, remainingPath, search) {
   return candidates;
 }
 
-async function proxyOnce(targetUrlStr, req, mode, realIp, originHost, fake) {
+async function proxyOnce(targetUrlStr, req, mode, realIp, originHost) {
   const targetUrl = new URL(targetUrlStr);
   const headers = new Headers();
 
@@ -254,58 +254,6 @@ async function proxyOnce(targetUrlStr, req, mode, realIp, originHost, fake) {
   if (mode === 'dual' || mode === 'realip_only') {
     headers.set('X-Real-IP', realIp);
     headers.set('X-Forwarded-For', realIp);
-  }
-
-  // ========== 伪装设备请求头（参考 CF Worker 伪装版） ==========
-  if (fake && fake.enabled) {
-    // 1. 伪装 User-Agent
-    if (fake.ua) headers.set('User-Agent', fake.ua);
-
-    // 2. 伪装 Emby 授权头里的 Client / Version / Device
-    ['x-emby-authorization', 'authorization'].forEach(headerName => {
-      const authHeader = headers.get(headerName);
-      if (!authHeader) return;
-      let h = authHeader;
-      if (fake.client) h = h.replace(/(Client\s*=\s*)(?:"[^"]*"|'[^']*'|[^,\s]+)/ig, `$1"${fake.client}"`);
-      if (fake.version) h = h.replace(/(Version\s*=\s*)(?:"[^"]*"|'[^']*'|[^,\s]+)/ig, `$1"${fake.version}"`);
-      if (fake.device) h = h.replace(/(Device\s*=\s*)(?:"[^"]*"|'[^']*'|[^,\s]+)/ig, `$1"${fake.device}"`);
-      headers.set(headerName, h);
-    });
-
-    // 3. 伪装标准 Emby 头（x-emby-client / x-emby-client-version / x-emby-device-name）
-    const paramsToReplace = {
-      'x-emby-client': fake.client,
-      'x-emby-client-version': fake.version,
-      'x-emby-device-name': fake.device,
-    };
-    for (const key of [...headers.keys()]) {
-      const lowerKey = key.toLowerCase();
-      if (paramsToReplace[lowerKey] && headers.get(key)) headers.set(key, paramsToReplace[lowerKey]);
-    }
-
-    // 4. 伪装 URL 参数里同名的查询串（部分客户端把身份信息放在 query）
-    for (const key of [...targetUrl.searchParams.keys()]) {
-      const lowerKey = key.toLowerCase();
-      if (paramsToReplace[lowerKey]) targetUrl.searchParams.set(key, paramsToReplace[lowerKey]);
-    }
-
-    // 5. 请求体（JSON）内嵌身份字段改写
-    if (req.method !== 'GET' && req.method !== 'HEAD' && req.__bodyBuffer && req.__bodyBuffer.byteLength > 0 && req.__bodyBuffer.byteLength < 102400) {
-      const contentType = String(req.headers['content-type'] || '').toLowerCase();
-      if (contentType.includes('application/json')) {
-        try {
-          let bodyText = req.__bodyBuffer.toString('utf8');
-          const before = bodyText;
-          if (fake.client) bodyText = bodyText.replace(/("Client(Name)?"\s*:\s*")[^"]+(")/ig, `$1${fake.client}$3`);
-          if (fake.version) bodyText = bodyText.replace(/("Version"\s*:\s*")[^"]+(")/ig, `$1${fake.version}$2`);
-          if (fake.device) bodyText = bodyText.replace(/("Device(Name)?"\s*:\s*")[^"]+(")/ig, `$1${fake.device}$3`);
-          if (bodyText !== before) {
-            req.__bodyBuffer = Buffer.from(bodyText);
-            headers.set('Content-Length', String(req.__bodyBuffer.byteLength));
-          }
-        } catch (e) { /* 改写失败则保持原样透传 */ }
-      }
-    }
   }
 
   const init = { method: req.method, headers, redirect: 'manual' };
@@ -399,7 +347,6 @@ async function handleProxy(req, res, pathname, search) {
   let mode = 'off';
   let enableCache = true;
   let ipv6Mode = 'auto';
-  let fake = null;
   const proxyOrigin = `${req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'}://${req.headers.host}`;
 
   if (decodedPath.startsWith('/http://') || decodedPath.startsWith('/https://')) {
@@ -415,15 +362,6 @@ async function handleProxy(req, res, pathname, search) {
     mode = route.mode || 'off';
     enableCache = route.cache_img !== 'off';
     ipv6Mode = route.v6 || 'auto';
-    if (route.fake) {
-      fake = {
-        enabled: true,
-        client: route.customClient || '',
-        version: route.customVersion || '',
-        device: route.customDevice || '',
-        ua: route.customUa || '',
-      };
-    }
     remainingPath = '/' + parts.slice(2).join('/');
     targetUrls = (route.target || '').split(',').map(s => s.trim()).filter(Boolean);
     if (remainingPath.startsWith('/http://') || remainingPath.startsWith('/https://')) {
@@ -499,10 +437,10 @@ async function handleProxy(req, res, pathname, search) {
             originHost = r.originHost;
           }
           try {
-            upstreamRes = await proxyOnce(requestUrl, req, mode, realIp, originHost, fake);
+            upstreamRes = await proxyOnce(requestUrl, req, mode, realIp, originHost);
           } catch (e) {
             if (requestUrl !== candidateUrl) {
-              upstreamRes = await proxyOnce(candidateUrl, req, mode, realIp, null, fake);
+              upstreamRes = await proxyOnce(candidateUrl, req, mode, realIp, null);
             } else {
               throw e;
             }
@@ -547,13 +485,6 @@ async function handleProxy(req, res, pathname, search) {
           // 自动识别：未配置 backendDomain 时，从媒体响应里学习源站
           const mediaFound = extractMediaOrigins(text, baseOrigins.map(o => o));
           let rewritten = rewriteUrlsInText(text, baseOrigins, mediaFound, proxyOrigin, matchedPrefix || '');
-
-          // 伪装：改写返回给客户端的身份字段（PlaybackInfo 等 JSON 响应）
-          if (fake && fake.enabled && /\/PlaybackInfo/i.test(decodedPath) && /json/i.test(ct)) {
-            if (fake.client) rewritten = rewritten.replace(/("Client(Name)?"\s*:\s*")[^"]+(")/ig, `$1${fake.client}$3`);
-            if (fake.version) rewritten = rewritten.replace(/("Version"\s*:\s*")[^"]+(")/ig, `$1${fake.version}$2`);
-            if (fake.device) rewritten = rewritten.replace(/("Device(Name)?"\s*:\s*")[^"]+(")/ig, `$1${fake.device}$3`);
-          }
 
           const headersOut = { ...upstreamHeaders };
           delete headersOut['content-length'];
@@ -707,11 +638,6 @@ async function handleApi(req, res, url) {
       existing.cache_img = body.cache_img !== undefined ? body.cache_img : existing.cache_img;
       if (body.v6 !== undefined) existing.v6 = body.v6;
       if (body.icon !== undefined) existing.icon = body.icon;
-      existing.fake = body.fake !== undefined ? !!body.fake : existing.fake;
-      if (body.customClient !== undefined) existing.customClient = body.customClient;
-      if (body.customVersion !== undefined) existing.customVersion = body.customVersion;
-      if (body.customDevice !== undefined) existing.customDevice = body.customDevice;
-      if (body.customUa !== undefined) existing.customUa = body.customUa;
     } else {
       routes.push({
         prefix,
@@ -720,11 +646,6 @@ async function handleApi(req, res, url) {
         cache_img: body.cache_img !== undefined ? body.cache_img : true,
         v6: body.v6 || 'auto',
         icon: body.icon || '',
-        fake: !!body.fake,
-        customClient: body.customClient || '',
-        customVersion: body.customVersion || '',
-        customDevice: body.customDevice || '',
-        customUa: body.customUa || '',
         sort_order: routes.length + 1,
         createdAt: nowStr(),
       });
@@ -771,11 +692,6 @@ async function handleApi(req, res, url) {
       cache_img: r.cache_img !== undefined ? r.cache_img : true,
       v6: r.v6 || 'auto',
       icon: r.icon || '',
-      fake: !!r.fake,
-      customClient: r.customClient || '',
-      customVersion: r.customVersion || '',
-      customDevice: r.customDevice || '',
-      customUa: r.customUa || '',
       sort_order: r.sort_order || 1,
       createdAt: r.createdAt || nowStr(),
     })).filter(r => r.prefix && r.target);
