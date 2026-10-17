@@ -416,6 +416,36 @@
                 <div id="ptHits" style="font-size:12px;color:var(--text-sec);">加载中…</div>
             </div>
         </div>
+        <div style="border-top:1px dashed var(--border); margin-top:18px; padding-top:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="font-size:13px;font-weight:600;color:var(--text);">IP 访问控制</span>
+                <span id="ipgCurrent" style="font-size:12px;color:var(--text-sec);">当前 IP: 加载中</span>
+            </div>
+            <div style="font-size:12px;color:var(--text-sec);margin-bottom:10px;line-height:1.7;">面板与节点链接统一拦截。白名单=仅名单内放行;黑名单=名单内跳转。<b style="color:var(--accent);">/entry</b> 逃生入口不受封锁,登录后 IP 自动进最高白名单。</div>
+            <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:13px; margin-bottom:12px;">
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="radio" name="ipgMode" value="off" style="accent-color:var(--accent);"> 关闭</label>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="radio" name="ipgMode" value="whitelist" style="accent-color:var(--accent);"> 白名单</label>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="radio" name="ipgMode" value="blacklist" style="accent-color:var(--accent);"> 黑名单</label>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+                <span style="font-size:12px;color:var(--text-sec);">当前访问:</span>
+                <span id="ipgCurrentIp" style="font-size:12px;font-weight:600;color:var(--text);">-</span>
+                <button class="btn-ghost" style="font-size:12px;padding:4px 10px;" onclick="ipgAddCurrent()">加入 IP 列表</button>
+            </div>
+            <textarea id="ipgIps" rows="3" placeholder="IP / 网段,每行一个,支持 CIDR&#10;如: 1.2.3.4&#10;5.6.7.0/24" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:13px; box-sizing:border-box; resize:vertical; margin-bottom:10px;"></textarea>
+            <input type="text" id="ipgCountries" placeholder="国家/地区码,每行一个 ISO 两位码,如 US、RU、CN(需反代层传 cf-ipcountry/x-country 头)" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:13px; box-sizing:border-box; margin-bottom:10px;">
+            <input type="text" id="ipgRedirect" placeholder="跳转网址(被拦截时 302 跳转,留空显示禁用页)" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:13px; box-sizing:border-box; margin-bottom:10px;">
+            <div style="border-top:1px dashed var(--border); padding-top:12px; margin-top:4px;">
+                <div style="font-size:13px; font-weight:600; color:var(--text); margin-bottom:6px;">最高白名单(/entry 登录 IP,任何模式都放行)</div>
+                <div style="font-size:12px; color:var(--text-sec); margin-bottom:8px; line-height:1.6;">登录 /entry 成功的 IP 自动加入;可在此删除,也可手动添加。</div>
+                <div id="ipgTrustedList" style="display:flex; flex-direction:column; gap:4px; margin-bottom:8px;"></div>
+                <div style="display:flex; gap:8px;">
+                    <input type="text" id="ipgTrustedAdd" placeholder="输入要添加的 IP" style="flex:1; padding:8px 10px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:13px;">
+                    <button class="btn-submit" style="padding:8px 14px; font-size:13px;" onclick="ipgTrustedAddOne()">添加</button>
+                </div>
+            </div>
+            <button class="btn-submit" onclick="saveIpGuard()" style="margin-top:14px; width:100%;">保存 IP 访问控制</button>
+        </div>
         <div style="border-top:1px dashed var(--border); margin-top:18px; padding-top:14px; display:flex; justify-content:space-between; align-items:center;">
             <span style="font-size:13px; color:var(--text-sec);">退出当前登录</span>
             <button class="btn-danger" onclick="confirmLogout()" style="padding:8px 16px; font-size:13px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg> 退出</button>
@@ -1024,6 +1054,63 @@ async function clearPtHits() {
     loadPtHits();
   } catch (e) { toast(I.warn + ' 清空失败'); }
 }
+/* ============ IP 访问控制 ============ */
+let IPG_TRUSTED = [];
+async function loadIpGuard() {
+  try {
+    const r = await api('/api/ipguard');
+    if (!r || !r.success) return;
+    document.querySelectorAll('input[name=ipgMode]').forEach(x => { x.checked = (x.value === r.mode); });
+    const ips = $('ipgIps'); if (ips) ips.value = (r.ips || []).join('\n');
+    const cs = $('ipgCountries'); if (cs) cs.value = (r.countries || []).join('\n');
+    const rd = $('ipgRedirect'); if (rd) rd.value = r.redirect || '';
+    const cur = $('ipgCurrentIp'); if (cur) cur.textContent = (r.currentIp || '-') + (r.currentCountry ? ' (' + r.currentCountry + ')' : '');
+    IPG_TRUSTED = (r.trusted || []).slice();
+    renderIpGuardTrusted();
+  } catch (e) {}
+}
+function renderIpGuardTrusted() {
+  const box = $('ipgTrustedList');
+  if (!box) return;
+  if (!IPG_TRUSTED.length) { box.innerHTML = '<div style="font-size:12px;color:var(--text-sec);">暂无信任 IP</div>'; return; }
+  box.innerHTML = IPG_TRUSTED.map(ip => `<div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:6px 9px;background:var(--bg);border:1px solid var(--border);border-radius:8px;gap:8px;"><span style="word-break:break-all;color:var(--text);">${escapeHtml(ip)}</span><button onclick="ipgTrustedDel(this)" data-ip="${escapeHtml(ip)}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;flex-shrink:0;" title="删除">✕</button></div>`).join('');
+}
+function ipgTrustedDel(btn) {
+  const ip = btn.getAttribute('data-ip');
+  if (!ip) return;
+  IPG_TRUSTED = IPG_TRUSTED.filter(x => x !== ip);
+  renderIpGuardTrusted();
+}
+function ipgTrustedAddOne() {
+  const v = $('ipgTrustedAdd').value.trim();
+  if (!v) return;
+  if (IPG_TRUSTED.indexOf(v) < 0) IPG_TRUSTED.push(v);
+  $('ipgTrustedAdd').value = '';
+  renderIpGuardTrusted();
+}
+function ipgAddCurrent() {
+  const cur = $('ipgCurrentIp');
+  const ip = cur ? cur.textContent.replace(/\(.*\)$/, '').trim() : '';
+  const box = $('ipgIps');
+  if (!box || !ip || ip === '-') return;
+  const list = box.value.split('\n').map(x => x.trim()).filter(Boolean);
+  if (list.indexOf(ip) < 0) list.push(ip);
+  box.value = list.join('\n');
+}
+async function saveIpGuard() {
+  if (role !== 'admin') return toast(I.warn + ' 仅管理员可设置 IP 访问控制');
+  const modeEl = document.querySelector('input[name=ipgMode]:checked');
+  if (!modeEl) return toast(I.warn + ' 保存失败:未选中模式,请先选择关闭/白名单/黑名单');
+  const mode = modeEl.value;
+  const ips = $('ipgIps').value.split('\n').map(x => x.trim()).filter(Boolean);
+  const countries = $('ipgCountries').value.split('\n').map(x => x.trim().toUpperCase()).filter(Boolean);
+  const redirect = $('ipgRedirect').value.trim();
+  try {
+    const r = await api('/api/ipguard', { method: 'POST', body: JSON.stringify({ mode, ips, countries, redirect, trusted: IPG_TRUSTED }) });
+    if (r && !r.success) return toast(I.warn + ' ' + (r.error || '保存失败'));
+    toast(I.check + ' IP 访问控制已保存');
+  } catch (e) { toast(I.warn + ' 保存失败'); }
+}
 $('accountModal').addEventListener('click', (e) => { if (e.target === $('accountModal')) closeAccount(); });
 $('nodeModal').addEventListener('click', (e) => { if (e.target === $('nodeModal')) closeNodeModal(); });
 
@@ -1039,6 +1126,7 @@ function loadAll() {
   loadStats();
   updateRTT();
   loadPtState();
+  loadIpGuard();
 }
 
 init();

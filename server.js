@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const dns = require('dns');
 
+// VERSION: 1.5.0（新增 IP 访问控制：白/黑名单 + 国家封锁 + /entry 逃生）
 const PORT = parseInt(process.env.PORT || '3333', 10);
 const DATA_DIR = path.join(__dirname, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -34,6 +35,8 @@ function ensureData() {
       frontendDomain: '',
       backendDomain: '',
       networkPreference: 'auto',
+      ipguard: { mode: 'off', ips: [], countries: [], redirect: '' },
+      ipguardTrusted: [],
     }, null, 2));
   }
   if (!fs.existsSync(ROUTES_FILE)) fs.writeFileSync(ROUTES_FILE, JSON.stringify([], null, 2));
@@ -54,6 +57,8 @@ ensureData();
 let config = loadJSON(CONFIG_FILE, {});
 let routes = loadJSON(ROUTES_FILE, []);
 let stats = loadJSON(STATS_FILE, {});
+if (!config.ipguard || typeof config.ipguard !== 'object') config.ipguard = { mode: 'off', ips: [], countries: [], redirect: '' };
+if (!Array.isArray(config.ipguardTrusted)) config.ipguardTrusted = [];
 
 const persistConfig = () => saveJSON(CONFIG_FILE, config);
 const persistRoutes = () => saveJSON(ROUTES_FILE, routes);
@@ -127,6 +132,237 @@ function getClientIp(req) {
   const xff = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   return xff || req.socket.remoteAddress || 'Unknown';
 }
+
+
+/* ==========================================================
+ * IP 访问控制（白名单/黑名单 + 国家封锁 + /entry 逃生）
+ * 与 CF Worker 版行为一致：trusted 最高白名单放行 / 保留后缀永不拦截
+ * ========================================================== */
+function getClientCountry(req) {
+  const c = (req.headers['cf-ipcountry'] || req.headers['x-country'] || '').trim().toUpperCase();
+  return c || '';
+}
+const IPG_BYPASS_PREFIX = ['/api/', '/entry', '/catch', '/favicon.ico', '/__client_rtt__', '/speedtest'];
+function isIpGuardBypass(p) {
+  return IPG_BYPASS_PREFIX.some(pre => p === pre || p.startsWith(pre));
+}
+function ipv4ToInt(ip) {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return -1;
+  let v = 0;
+  for (const seg of parts) {
+    if (!/^\d{1,3}$/.test(seg)) return -1;
+    const n = parseInt(seg, 10);
+    if (n > 255) return -1;
+    v = v * 256 + n;
+  }
+  return v >>> 0;
+}
+function ipv6ToBytes(ip) {
+  try {
+    let s = ip;
+    if (s.indexOf('::') >= 0) {
+      const t = s.split('::');
+      const left = t[0] ? t[0].split(':') : [], right = t[1] ? t[1].split(':') : [];
+      const pad = 8 - left.length - right.length;
+      if (pad < 0) return null;
+      s = left.concat(Array(pad).fill('0'), right).join(':');
+    }
+    const parts = s.split(':');
+    if (parts.length !== 8) return null;
+    const bytes = [];
+    for (const part of parts) {
+      const n = parseInt(part, 16);
+      if (isNaN(n)) return null;
+      bytes.push((n >> 8) & 0xff, n & 0xff);
+    }
+    return bytes;
+  } catch (e) { return null; }
+}
+function ipInCidr(ip, cidr) {
+  const idx = cidr.indexOf('/');
+  if (idx <= 0) return false;
+  const net = cidr.slice(0, idx).trim();
+  const bits = parseInt(cidr.slice(idx + 1), 10);
+  if (isNaN(bits)) return false;
+  if (net.indexOf('.') >= 0) {
+    if (bits < 0 || bits > 32) return false;
+    const a = ipv4ToInt(ip), b = ipv4ToInt(net);
+    if (a < 0 || b < 0) return false;
+    const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+    return (a & mask) === (b & mask);
+  }
+  if (net.indexOf(':') >= 0) {
+    if (bits < 0 || bits > 128) return false;
+    const a = ipv6ToBytes(ip), b = ipv6ToBytes(net);
+    if (!a || !b) return false;
+    const full = bits >> 3, rem = bits & 7;
+    for (let i = 0; i < full; i++) if (a[i] !== b[i]) return false;
+    if (rem) { const m = 0xff << (8 - rem); if ((a[full] & m) !== (b[full] & m)) return false; }
+    return true;
+  }
+  return false;
+}
+function ipMatchAny(ip, list) {
+  if (!ip || !Array.isArray(list) || !list.length) return false;
+  for (const raw of list) {
+    const t = String(raw).trim();
+    if (!t) continue;
+    if (t === ip) return true;
+    if (t.indexOf('/') >= 0 && ipInCidr(ip, t)) return true;
+  }
+  return false;
+}
+
+// ============ IP 被封提示页(未设置跳转网址时显示) ============
+const IP_BLOCKED_UI = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>访问已被禁止</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;color:#e8eaed;padding:20px}
+.card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:36px;width:100%;max-width:400px;text-align:center}
+h1{font-size:22px;margin-bottom:12px}
+.sub{font-size:14px;color:#aab4c0;margin-bottom:20px;line-height:1.7;word-break:break-all}
+.badge{display:inline-block;background:rgba(255,107,107,.15);border:1px solid rgba(255,107,107,.35);color:#ff6b6b;padding:4px 14px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:16px}
+.tip{font-size:12px;color:#8b96a3;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="card">
+<span class="badge">&#128683; 访问已被禁止</span>
+<h1>你的 IP 已被禁用</h1>
+<div class="sub">当前 IP: <b style="color:#fff;">__IP__</b><br>地区: __COUNTRY__<br>该 IP 不在允许访问范围内</div>
+<div class="tip">如有疑问请联系管理员</div>
+</div>
+</body>
+</html>`;
+
+// ============ 管理员逃生入口 /entry(只认 adminToken,不受 IP 封锁影响) ============
+const ENTRY_UI = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理员逃生入口</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;color:#e8eaed;padding:20px}
+.card{background:rgba(255,255,255,.06);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:32px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.4);margin-bottom:16px}
+h1{font-size:19px;margin-bottom:8px;text-align:center}
+.sub{font-size:13px;color:#aab4c0;text-align:center;margin-bottom:18px;line-height:1.6}
+input[type=password],input[type=text],textarea{width:100%;padding:12px 14px;border:1px solid rgba(255,255,255,.18);border-radius:10px;background:rgba(255,255,255,.07);color:#fff;font-size:14px;outline:none;margin-bottom:12px;box-sizing:border-box}
+input:focus,textarea:focus{border-color:#4da3ff}
+textarea{resize:vertical;min-height:80px}
+button{width:100%;padding:13px;border:none;border-radius:10px;background:#4da3ff;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+button:active{opacity:.85}
+button.ghost{background:transparent;border:1px solid rgba(255,255,255,.3);margin-top:8px}
+.row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px;margin-bottom:12px}
+.row label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.err{color:#ff6b6b;font-size:13px;text-align:center;margin-top:10px;min-height:18px}
+.ok{color:#34c759;font-size:13px;text-align:center;margin-top:10px;min-height:18px}
+.tip{margin-top:16px;font-size:12px;color:#8b96a3;text-align:center;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="card" id="loginCard">
+<h1>&#128274; 管理员逃生入口</h1>
+<div class="sub">当前 IP 被访问控制拦截时,<br>输入管理员密钥即可解锁并管理</div>
+<input type="password" id="pass" placeholder="管理员密钥" autocomplete="off">
+<button onclick="go()">解锁</button>
+<div class="err" id="err"></div>
+</div>
+<div class="card" id="manageCard" style="display:none; max-width:460px;">
+<h1>&#9881; IP 访问控制</h1>
+<div class="sub">你的 IP <b id="myIp" style="color:#fff;">-</b> 已加入最高白名单,<br>任何模式都可访问面板与节点</div>
+<div class="row">
+<label><input type="radio" name="m" value="off" style="accent-color:#4da3ff;"> 关闭</label>
+<label><input type="radio" name="m" value="whitelist" style="accent-color:#4da3ff;"> 白名单</label>
+<label><input type="radio" name="m" value="blacklist" style="accent-color:#4da3ff;"> 黑名单</label>
+</div>
+<textarea id="ips" placeholder="IP / 网段,每行一个,支持 CIDR&#10;如: 1.2.3.4&#10;5.6.7.0/24"></textarea>
+<input type="text" id="countries" placeholder="国家/地区码,每行一个 ISO 两位码,如 US、RU、CN">
+<input type="text" id="redirect" placeholder="跳转网址(被拦截时 302 跳转)">
+<div style="margin-bottom:12px; border-top:1px solid rgba(255,255,255,.12); padding-top:12px;">
+<div style="font-size:13px; font-weight:600; margin-bottom:6px;">最高白名单</div>
+<div style="font-size:12px; color:#8b96a3; margin-bottom:8px; line-height:1.6;">你的 IP 已自动加入。共享节点的其他 IP 可在此删除,修改后点保存生效。</div>
+<div id="tList" style="display:flex; flex-direction:column; gap:4px; margin-bottom:8px;"></div>
+<div style="display:flex; gap:8px;">
+<input type="text" id="tAdd" placeholder="输入要添加的 IP" style="flex:1; margin-bottom:0;">
+<button onclick="tAddOne()" style="width:auto; padding:12px 14px; font-size:13px; background:rgba(255,255,255,.12);">添加</button>
+</div>
+</div>
+<button onclick="save()">保存设置</button>
+<div class="ok" id="sOk"></div>
+<div class="err" id="sErr"></div>
+<button class="ghost" onclick="goPanel()">进入面板 &rarr;</button>
+<div class="tip">最高白名单在登录时自动加入;<br>此入口不受 IP 封锁影响</div>
+</div>
+<script>
+function $(id){return document.getElementById(id);}
+async function go(){
+  var p=$('pass').value.trim();
+  var err=$('err');
+  if(!p){err.textContent='请输入密钥';return;}
+  try{
+    var r=await fetch('/api/entry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pass:p})});
+    var d=await r.json();
+    if(d.success){
+      err.textContent='';
+      $('loginCard').style.display='none';
+      $('manageCard').style.display='block';
+      $('myIp').textContent=d.currentIp||'-';
+      loadCfg();
+    }else{err.textContent=d.error||'解锁失败';}
+  }catch(e){err.textContent='请求失败: '+e.message;}
+}
+var ENTRY_TRUSTED=[];
+function escHtmlE(v){return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function renderTList(){
+  var box=$('tList');
+  if(!box)return;
+  if(!ENTRY_TRUSTED.length){box.innerHTML='<div style="font-size:12px;color:#8b96a3;">暂无信任 IP</div>';return;}
+  box.innerHTML=ENTRY_TRUSTED.map(function(ip){return '<div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:5px 8px;background:rgba(255,255,255,.06);border-radius:6px;gap:8px;"><span style="word-break:break-all;">'+escHtmlE(ip)+'</span><button onclick="tDel(this)" data-ip="'+escHtmlE(ip)+'" style="background:none;border:none;color:#ff6b6b;cursor:pointer;font-size:13px;flex-shrink:0;">✕</button></div>';}).join('');
+}
+function tDel(btn){var ip=btn.getAttribute('data-ip');if(!ip)return;ENTRY_TRUSTED=ENTRY_TRUSTED.filter(function(x){return x!==ip;});renderTList();}
+function tAddOne(){var v=$('tAdd').value.trim();if(!v)return;if(ENTRY_TRUSTED.indexOf(v)<0)ENTRY_TRUSTED.push(v);$('tAdd').value='';renderTList();}
+async function loadCfg(){
+  try{
+    var r=await fetch('/api/ipguard');
+    var d=await r.json();
+    if(!d.success)return;
+    var radios=document.querySelectorAll('input[name=m]');
+    for(var i=0;i<radios.length;i++){radios[i].checked=(radios[i].value===d.mode);}
+    $('ips').value=(d.ips||[]).join('\\n');
+    $('countries').value=(d.countries||[]).join('\\n');
+    $('redirect').value=d.redirect||'';
+    ENTRY_TRUSTED=(d.trusted||[]).slice();
+    renderTList();
+  }catch(e){}
+}
+async function save(){
+  var mode='off';
+  var radios=document.querySelectorAll('input[name=m]');
+  for(var i=0;i<radios.length;i++){if(radios[i].checked)mode=radios[i].value;}
+  var ips=$('ips').value.split('\\n').map(function(x){return x.trim();}).filter(Boolean);
+  var countries=$('countries').value.split('\\n').map(function(x){return x.trim().toUpperCase();}).filter(Boolean);
+  var redirect=$('redirect').value.trim();
+  $('sOk').textContent='';
+  $('sErr').textContent='';
+  try{
+    var r=await fetch('/api/ipguard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:mode,ips:ips,countries:countries,redirect:redirect,trusted:ENTRY_TRUSTED})});
+    var d=await r.json();
+    if(d.success){$('sOk').textContent='设置已保存';}else{$('sErr').textContent='保存失败: '+(d.error||'');}
+  }catch(e){$('sErr').textContent='保存失败: '+e.message;}
+}
+function goPanel(){location.href='/';}
+$('pass').addEventListener('keydown',function(e){if(e.key==='Enter'){go();}});
+</script>
+</body>
+</html>`;
 
 function nowStr() {
   return new Date(Date.now() + 8 * 3600000).toISOString().replace('T', ' ').split('.')[0];
@@ -546,6 +782,51 @@ async function handleApi(req, res, url) {
     return true;
   };
 
+  // /api/entry:逃生登录(无需认证,只认 adminToken,adminPass 仅兜底)
+  if (url.pathname === '/api/entry' && req.method === 'POST') {
+    const body = await readBody(req).then(b => { try { return JSON.parse(b.toString()); } catch (e) { return {}; } });
+    const pass = String(body.pass || '');
+    let adminPass = config.adminToken || '';
+    if (!adminPass && config.adminPass) adminPass = config.adminPass;
+    if (pass && pass === adminPass) {
+      const clientIp = getClientIp(req);
+      if (clientIp && clientIp !== 'Unknown') {
+        const t = config.ipguardTrusted || [];
+        if (t.indexOf(clientIp) < 0) { t.push(clientIp); config.ipguardTrusted = t; persistConfig(); }
+      }
+      setAuthCookie(res, pass);
+      return sendJSON(res, 200, { success: true, currentIp: clientIp });
+    }
+    return sendJSON(res, 200, { success: false, error: '密钥错误' });
+  }
+
+  // /api/ipguard:GET 任意可读(逃生页未登录需读配置);POST 仅管理员
+  if (url.pathname === '/api/ipguard' && req.method === 'GET') {
+    const guard = config.ipguard || { mode: 'off', ips: [], countries: [], redirect: '' };
+    return sendJSON(res, 200, {
+      success: true,
+      mode: guard.mode,
+      ips: guard.ips || [],
+      countries: guard.countries || [],
+      redirect: guard.redirect || '',
+      trusted: config.ipguardTrusted || [],
+      currentIp: getClientIp(req),
+      currentCountry: getClientCountry(req),
+    });
+  }
+  if (url.pathname === '/api/ipguard' && req.method === 'POST') {
+    if (!needAdmin(url.pathname)) return;
+    const body = await readBody(req).then(b => { try { return JSON.parse(b.toString()); } catch (e) { return {}; } });
+    const mode = ['off', 'whitelist', 'blacklist'].includes(body.mode) ? body.mode : 'off';
+    const ips = Array.isArray(body.ips) ? body.ips.map(String).map(x => x.trim()).filter(Boolean) : [];
+    const countries = Array.isArray(body.countries) ? body.countries.map(String).map(x => x.trim().toUpperCase()).filter(Boolean) : [];
+    const redirect = String(body.redirect || '').trim();
+    config.ipguard = { mode, ips, countries, redirect };
+    if (Array.isArray(body.trusted)) config.ipguardTrusted = body.trusted.map(String).map(x => x.trim()).filter(Boolean);
+    persistConfig();
+    return sendJSON(res, 200, { success: true });
+  }
+
   // 登录（无需认证）
   if (url.pathname === '/api/login' && req.method === 'POST') {
     const body = await readBody(req).then(b => { try { return JSON.parse(b.toString()); } catch (e) { return {}; } });
@@ -809,6 +1090,35 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
+    // ===== IP 访问控制(与 CF 版一致:面板 + 节点统一拦截;保留后缀不拦;无 cookie 逃生) =====
+    if (!isIpGuardBypass(url.pathname)) {
+      const guard = config.ipguard || { mode: 'off' };
+      if (guard.mode !== 'off') {
+        const clientIp = getClientIp(req);
+        if (clientIp && clientIp !== 'Unknown') {
+          const trusted = config.ipguardTrusted || [];
+          if (trusted.indexOf(clientIp) < 0) {
+            const country = getClientCountry(req);
+            const hit = ipMatchAny(clientIp, guard.ips) || (country && (guard.countries || []).indexOf(country) >= 0);
+            const blocked = guard.mode === 'whitelist' ? !hit : hit;
+            if (blocked) {
+              if (guard.redirect) { res.writeHead(302, { Location: guard.redirect }); res.end(); return; }
+              res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+              res.end(IP_BLOCKED_UI.replace('__IP__', escapeHtml(clientIp)).replace('__COUNTRY__', escapeHtml(country || '-')));
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    // 管理员逃生入口(不拦截)
+    if (url.pathname === '/entry') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(ENTRY_UI);
+      return;
+    }
+
     // API
     if (url.pathname.startsWith('/api/')) {
       return await handleApi(req, res, url);
@@ -853,6 +1163,22 @@ const server = http.createServer(async (req, res) => {
 /* WebSocket upgrade 透传 */
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  // IP 访问控制:被拦截的 WS 连接直接断开(与节点拦截一致)
+  if (!isIpGuardBypass(url.pathname)) {
+    const guard = config.ipguard || { mode: 'off' };
+    if (guard.mode !== 'off') {
+      const clientIp = getClientIp(req);
+      if (clientIp && clientIp !== 'Unknown') {
+        const trusted = config.ipguardTrusted || [];
+        if (trusted.indexOf(clientIp) < 0) {
+          const country = getClientCountry(req);
+          const hit = ipMatchAny(clientIp, guard.ips) || (country && (guard.countries || []).indexOf(country) >= 0);
+          const blocked = guard.mode === 'whitelist' ? !hit : hit;
+          if (blocked) { socket.destroy(); return; }
+        }
+      }
+    }
+  }
   let decodedPath = decodeURIComponent(url.pathname);
   // 反代 Token 门禁：WS 路径同样需带密钥前缀
   const pt = config.proxyToken || {};
