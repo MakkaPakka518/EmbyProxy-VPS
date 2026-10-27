@@ -312,7 +312,37 @@
             <div id="subList"></div>
         </div>
 
-        <!-- 今日统计 -->
+<div class="card" id="tgCard" style="display:none">
+  <h2><svg style="width:18px;height:18px;vertical-align:-3px;margin-right:6px" viewBox="0 0 24 24" fill="#4cc2ff"><path d="M9.04 15.51l-.47 4.42c.61 0 .88-.26 1.2-.57l2.87-2.71 5.92 4.27c1.09.6 1.87.29 2.16-1L23 3.39c.36-1.43-.54-1.99-1.5-1.64L1.11 9.35C-.55 9.98-.53 10.89.84 11.25l5.55 1.72L18.9 5.15c.66-.4 1.26-.18.77.24l-9.63 10.12z"/></svg>TG 签到</h2>
+  <div class="muted">用你自己的 Telegram 账号，每天在设定时间窗里随机挑个时刻，给各站点机器人发一条签到命令（默认 /checkin），机器人回复会记进日志。session 用管理员密钥加密存在 data/tg.json（文件 600）。</div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px">
+    <label style="font-size:13px;color:var(--text-sec);display:flex;align-items:center;gap:4px"><input type="checkbox" id="tgOn" style="width:16px;height:16px"> 自动执行</label>
+    <span style="font-size:12px;color:var(--text-sec)">时间窗</span>
+    <input type="time" id="tgStart" style="flex:0 0 92px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <span style="color:var(--text-sec)">–</span>
+    <input type="time" id="tgEnd" style="flex:0 0 92px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <button class="btn-submit" onclick="tgSaveSettings()">保存设置</button>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+    <button class="btn-dns" onclick="tgLoginBox()">＋ 手机号登录</button>
+    <button class="btn-ghost" onclick="tgImportBox()">导入 session</button>
+    <button class="btn-ghost" onclick="tgDelAllDone()" title="所有任务今天标记为已完成">今天全部完成</button>
+  </div>
+  <div id="tgLoginPanel"></div>
+  <div class="secthead">账号</div>
+  <div id="tgAccList"></div>
+  <div class="secthead">签到任务 <button class="btn-ghost" style="float:right" onclick="tgRunAll()">全部执行</button></div>
+  <div id="tgTaskList"></div>
+  <form id="tgTaskForm" onsubmit="return tgAddTask(event)" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+    <input id="tgTName" placeholder="任务名" style="flex:1 1 100px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <input id="tgTTarget" placeholder="机器人 @xxx" style="flex:1 1 120px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <input id="tgTCmd" value="/checkin" style="flex:0 0 90px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <select id="tgTAcc" style="padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px"></select>
+    <button class="btn-submit">添加任务</button>
+  </form>
+  <div class="secthead">日志 <button class="btn-ghost" style="float:right" onclick="tgClearLogs()">清空</button></div>
+  <div id="tgLogs"></div>
+</div>        <!-- 今日统计 -->
         <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
                 <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg> 今日统计</h2>
@@ -554,6 +584,7 @@ function enterPanel() {
   $('panelPage').classList.remove('hidden');
   $('topbarLogo').src = 'https://raw.githubusercontent.com/MakkaPakka518/Icon/refs/heads/main/MAKKA_EMBY.JPG';
   $('accRole').textContent = '当前角色：' + (role === 'admin' ? '管理员' : '订阅者');
+  if (role === 'admin') $('tgCard').style.display = '';
   loadAll();
 }
 
@@ -1119,7 +1150,156 @@ function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
-function loadAll() {
+/* ============ TG 签到 ============ */
+var tg = { accounts: [], tasks: [], logs: [], settings: {}, running: [] };
+var tgLogin = null; // { id, step }
+var tgPollT = null;
+function showTip(m){ toast(m); }
+function tgApi(m, p, b){ return api(p, { method: m, body: JSON.stringify(b || {}) }).catch(function(e){ return { success: false, error: (e && e.message) || String(e) }; }); }
+
+async function loadTg() {
+  try {
+    tg = await api('/api/tg');
+    renderTg();
+    if (tg.running && tg.running.length) {
+      if (tgPollT) clearTimeout(tgPollT);
+      tgPollT = setTimeout(loadTg, 4000);
+    }
+  } catch (e) { /* 接口不可用 */ }
+}
+function tgFmt(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return (d.getMonth() + 1) + '-' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function tgBadge(a) {
+  if (a.running) return '<span class="badge" style="background:rgba(255,209,102,.15);color:#ffd166">执行中</span>';
+  if (a.lastOk === true) return '<span class="badge" style="background:rgba(52,199,89,.15);color:#34c759">成功</span>';
+  if (a.lastOk === false) return '<span class="badge" style="background:rgba(255,59,48,.15);color:#ff3b30">失败</span>';
+  return '<span class="badge" style="background:rgba(120,120,128,.15);color:#8e8e93">未执行</span>';
+}
+function renderTg() {
+  const s = tg.settings || {};
+  $('tgOn').checked = !!s.enabled;
+  $('tgStart').value = s.start || '00:05';
+  $('tgEnd').value = s.end || '00:40';
+  const sel = $('tgTAcc');
+  sel.innerHTML = (tg.accounts || []).map(a => '<option value="' + a.id + '">' + escapeHtml(a.name || a.phone) + '</option>').join('');
+  const accs = tg.accounts || [];
+  $('tgAccList').innerHTML = accs.length ? accs.map(a => {
+    const run = (a.running) ? '<button class="btn-ghost" disabled>执行中…</button>' : '<button class="btn-dns" onclick="tgRunAcc(\'' + a.id + '\')">执行</button>';
+    return '<div style="padding:10px 12px;border:1px solid var(--border);border-radius:12px;margin-bottom:8px">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px">' +
+      '<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:14px">' + escapeHtml(a.name || a.phone) + ' ' + tgBadge(a) + '</div>' +
+      '<div style="font-size:12px;color:var(--text-sec);margin-top:2px">' + escapeHtml(a.phone || '') + (a.apiId ? ' · api_id ' + escapeHtml(a.apiId) : '') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-sec);margin-top:2px">上次：' + tgFmt(a.lastTs) + ' ' + escapeHtml(a.lastMsg || '') + '</div></div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-content:flex-start">' + run +
+      '<button class="btn-ghost" onclick="tgCheckAcc(\'' + a.id + '\')">检测</button>' +
+      '<button class="btn-del" onclick="tgDelAcc(\'' + a.id + '\')">删除</button></div></div></div>';
+  }).join('') : '<div class="empty" style="padding:12px;color:var(--text-sec);font-size:13px">还没有账号，点上方「手机号登录」或「导入 session」</div>';
+  const tasks = tg.tasks || [];
+  $('tgTaskList').innerHTML = tasks.length ? tasks.map(t => {
+    const acc = accs.find(a => a.id === t.accountId);
+    const run = (t.name && accs.some(a => a.id === t.accountId && (t.running || a.running))) ? '<button disabled>执行中…</button>' : '<button class="btn-dns" onclick="tgRunTask(\'' + t.id + '\')">执行</button>';
+    return '<div style="padding:10px 12px;border:1px solid var(--border);border-radius:12px;margin-bottom:8px">' +
+      '<div style="font-weight:600;font-size:14px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + escapeHtml(t.name) + ' ' + tgBadge(t) + '</div>' +
+      '<div style="font-size:12px;color:var(--text-sec);margin-top:2px">' + escapeHtml(t.target || '') + ' · ' + escapeHtml(t.command || '/checkin') + ' · ' + escapeHtml((acc && (acc.name || acc.phone)) || '未绑定账号') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-sec);margin-top:2px">上次：' + tgFmt(t.lastTs) + ' ' + escapeHtml(t.lastMsg || '') + '</div>' +
+      '<div style="display:flex;gap:6px;margin-top:6px">' + run + '<button class="btn-del" onclick="tgDelTask(\'' + t.id + '\')">删除</button></div></div>';
+  }).join('') : '<div class="empty" style="padding:12px;color:var(--text-sec);font-size:13px">还没有任务，下面是添加任务的表单</div>';
+  const logs = (tg.logs || []).slice(0, 40);
+  $('tgLogs').innerHTML = logs.length ? logs.map(l =>
+    '<div style="font-size:12px;padding:4px 2px;border-bottom:1px dashed var(--border);display:flex;gap:6px">' +
+    '<span style="color:var(--text-sec);white-space:nowrap">' + tgFmt(l.ts) + '</span>' +
+    '<span style="color:' + (l.ok ? '#34c759' : '#ff3b30') + ';white-space:nowrap">' + (l.ok ? '✓' : '✗') + '</span>' +
+    '<span style="color:var(--text-sec);white-space:nowrap">' + escapeHtml(l.name || '') + '</span>' +
+    '<span style="word-break:break-all">' + escapeHtml(l.msg || '') + '</span></div>'
+  ).join('') : '<div class="empty" style="padding:12px;color:var(--text-sec);font-size:13px">暂无日志</div>';
+}
+async function tgSaveSettings() {
+  const r = await tgApi('POST', '/api/tg/settings', {
+    enabled: $('tgOn').checked, start: $('tgStart').value, end: $('tgEnd').value, timeout: 90
+  });
+  if (r && r.success) showTip(' 设置已保存'); else showTip(' 保存失败');
+}
+function tgLoginBox() {
+  tgLogin = null;
+  $('tgLoginPanel').innerHTML =
+    '<div style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;font-size:13px">' +
+    '<div style="font-weight:600;margin-bottom:8px">手机号登录（登录成功后本账号即绑定）</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+    '<input id="tgLName" placeholder="备注名（可选）" style="flex:1 1 90px;padding:6px;border-radius:8px;border:1px solid var(--border);color:var(--text);font-size:13px">' +
+    '<input id="tgLPhone" placeholder="手机号 如 +8613800138000" style="flex:2 1 160px;padding:6px;border-radius:8px;border:1px solid var(--border);color:var(--text);font-size:13px">' +
+    '<input id="tgLProxy" placeholder="代理(可选) 如 1.2.3.4:1080" style="flex:1 1 130px;padding:6px;border-radius:8px;border:1px solid var(--border);color:var(--text);font-size:13px">' +
+    '<button class="btn-submit" onclick="tgLSend()">发送验证码</button></div>' +
+    '<div class="muted" style="margin-top:6px;font-size:12px">api_id/api_hash 用内置默认（2040），可先不管；代理格式：user:pass@host:port 或 host:port</div></div>';
+}
+async function tgLSend() {
+  const name = $('tgLName').value, phone = $('tgLPhone').value, proxy = $('tgLProxy').value;
+  if (!phone) return showTip(' 请填写手机号');
+  const r = await tgApi('POST', '/api/tg/login/start', { name: name, phone: phone, proxy: proxy });
+  if (!r || !r.loginId) return showTip(' 发送失败');
+  tgLogin = { id: r.loginId, step: 'code' };
+  $('tgLoginPanel').innerHTML += '<div id="tgLStep" style="margin-top:10px">验证码已发到 ' + escapeHtml(r.phone) +
+    '<div style="display:flex;gap:8px;margin-top:6px"><input id="tgLCode" placeholder="6 位验证码" style="flex:1 1 140px;padding:6px;border-radius:8px;border:1px solid var(--border);color:var(--text);font-size:13px">' +
+    '<button class="btn-submit" onclick="tgLCode()">确认</button>' +
+    '<button class="btn-ghost" onclick="tgCancel()">取消</button></div></div>';
+}
+async function tgLCode() {
+  const code = $('tgLCode').value;
+  const r = await tgApi('POST', '/api/tg/login/code', { loginId: tgLogin.id, code: code });
+  if (!r) return showTip(' 请稍后重试');
+  if (r.needPassword) {
+    tgLogin.step = 'pw';
+    $('tgLStep').innerHTML = '该账号开了两步验证，再输入密码' +
+      '<div style="display:flex;gap:8px;margin-top:6px"><input id="tgLPw" type="password" placeholder="两步验证密码" style="flex:1 1 140px;padding:6px;border-radius:8px;border:1px solid var(--border);color:var(--text);font-size:13px">' +
+      '<button class="btn-submit" onclick="tgLPw()">确认</button></div>';
+  } else if (r.success) { showTip(' 登录成功'); tgLogin = null; $('tgLoginPanel').innerHTML = ''; loadTg(); }
+  else showTip(' ' + (r.error || '失败'));
+}
+async function tgLPw() {
+  const r = await tgApi('POST', '/api/tg/login/password', { loginId: tgLogin.id, password: $('tgLPw').value });
+  if (r && r.success) { showTip(' 登录成功'); tgLogin = null; $('tgLoginPanel').innerHTML = ''; loadTg(); }
+  else showTip(' ' + ((r && r.error) || '失败'));
+}
+async function tgCancel() { await tgApi('POST', '/api/tg/login/cancel', { loginId: tgLogin.id }); tgLogin = null; $('tgLoginPanel').innerHTML = ''; }
+function tgImportBox() {
+  $('tgLoginPanel').innerHTML =
+    '<div style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;font-size:13px">' +
+    '<div style="font-weight:600;margin-bottom:8px">导入 session 字符串（从别的 TG 面板复制）</div>' +
+    '<input id="tgIName" placeholder="备注名" style="flex:1 1 100px;padding:6px;border-radius:8px;border:1px solid var(--border);color:var(--text);font-size:13px;margin-bottom:6px;width:100%;box-sizing:border-box">' +
+    '<textarea id="tgISession" placeholder="session 字符串" style="width:100%;box-sizing:border-box;height:60px;padding:6px;border-radius:8px;border:1px solid var(--border);color:var(--text);font-size:12px"></textarea>' +
+    '<div style="display:flex;gap:8px;margin-top:6px"><button class="btn-submit" onclick="tgIImport()">保存并检测</button><button class="btn-ghost" onclick="tgLoginPanelClose()">取消</button></div></div>';
+}
+async function tgIImport() {
+  const body = { name: $('tgIName').value, session: $('tgISession').value };
+  if (!body.session) return showTip(' 请粘贴 session');
+  const r = await tgApi('POST', '/api/tg/account', body);
+  if (r && r.success) { showTip(' 导入成功：' + ((r.account && r.account.lastMsg) || '')); $('tgLoginPanel').innerHTML = ''; loadTg(); }
+  else showTip(' ' + ((r && r.error) || '导入失败'));
+}
+function tgLoginPanelClose() { $('tgLoginPanel').innerHTML = ''; }
+async function tgRunAcc(id) { const r = await tgApi('POST', '/api/tg/run', { accountId: id }); r && r.queued ? (showTip(' 已开始，约 1 分钟内出结果'), loadTg()) : showTip(' ' + ((r && r.error) || '执行失败')); }
+async function tgRunTask(id) { const r = await tgApi('POST', '/api/tg/run', { id: id }); r && r.queued ? (showTip(' 已开始'), loadTg()) : showTip(' ' + ((r && r.error) || '执行失败')); }
+async function tgRunAll() { const r = await tgApi('POST', '/api/tg/run', {}); r && r.queued ? (showTip(' 已全部开始'), loadTg()) : showTip(' ' + ((r && r.error) || '执行失败')); }
+async function tgCheckAcc(id) { const r = await tgApi('POST', '/api/tg/account/check', { id: id }); showTip(r && r.ok ? ' 检测通过' : ' ' + ((r && r.error) || '检测失败')); loadTg(); }
+async function tgDelAcc(id) { if (!confirm('删除账号 ' + id + '？关联任务也会删')) return; await tgApi('POST', '/api/tg/account/delete', { id: id }); loadTg(); }
+async function tgDelTask(id) { if (!confirm('删除任务？')) return; await tgApi('POST', '/api/tg/task/delete', { id: id }); loadTg(); }
+async function tgAddTask(ev) {
+  ev.preventDefault();
+  const r = await tgApi('POST', '/api/tg/task', {
+    name: $('tgTName').value, accountId: $('tgTAcc').value,
+    target: $('tgTTarget').value, command: $('tgTCmd').value
+  });
+  if (r && r.success) { $('tgTName').value = ''; $('tgTTarget').value = ''; showTip(' 任务已添加'); loadTg(); }
+  else showTip(' ' + ((r && r.error) || '添加失败'));
+  return false;
+}
+async function tgClearLogs() { await tgApi('POST', '/api/tg/logs/clear', {}); loadTg(); }
+async function tgDelAllDone() {
+  const r = await tgApi('POST', '/api/tg/task', { reset: true });
+  if (r && r.success) showTip(' 已把今天标记为完成');
+}function loadAll() {
   loadRoutes().catch(e => toast(I.warn + ' 加载节点失败'));
   loadConfig();
   loadSubs();
@@ -1127,6 +1307,7 @@ function loadAll() {
   updateRTT();
   loadPtState();
   loadIpGuard();
+  if (role === 'admin') loadTg();
 }
 
 init();

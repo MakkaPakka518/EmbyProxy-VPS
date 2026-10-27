@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const dns = require('dns');
 
-// VERSION: 1.5.0（新增 IP 访问控制：白/黑名单 + 国家封锁 + /entry 逃生）
+// VERSION: 2.0.0（新增 TG bot 签到：MTProto 直连、手机号/session 登录、每日随机时刻自动给机器人发签到命令）
 const PORT = parseInt(process.env.PORT || '3333', 10);
 const DATA_DIR = path.join(__dirname, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -854,6 +854,9 @@ async function handleApi(req, res, url) {
 
   if (!role) return sendJSON(res, 401, { success: false, error: 'Unauthorized' });
 
+  // TG bot 签到（MTProto）
+  if (url.pathname.indexOf('/api/tg') === 0) return tgApi(req, res, url, role);
+
   if (url.pathname === '/api/me' && req.method === 'GET') {
     return sendJSON(res, 200, { success: true, role });
   }
@@ -1243,8 +1246,2561 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
+/* ============ TG MTProto 内核（构建产物，勿手改） ============ */
+const TGKIT = (function (module) {
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __commonJS = (cb, mod) => function __require() {
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// cf-sockets.js
+var require_cf_sockets = __commonJS({
+  "cf-sockets.js"(exports2, module2) {
+    var net = require("net");
+    function connect2(addr, opts) {
+      const host = addr.hostname || addr.host;
+      const port = Number(addr.port);
+      let ctrl = null;
+      let openedResolve, openedReject, closedResolve;
+      const opened = new Promise((res, rej) => {
+        openedResolve = res;
+        openedReject = rej;
+      });
+      const closed = new Promise((res) => {
+        closedResolve = res;
+      });
+      const socket = net.connect({ host, port });
+      socket.setNoDelay(true);
+      const timer = setTimeout(() => {
+        socket.destroy(new Error("\u8FDE\u63A5\u8D85\u65F6 " + host + ":" + port));
+      }, 2e4);
+      const readable = new ReadableStream({
+        start(c) {
+          ctrl = c;
+        },
+        pull() {
+          socket.resume();
+        },
+        cancel() {
+          socket.destroy();
+        }
+      });
+      const writable = new WritableStream({
+        write(chunk) {
+          return new Promise((res, rej) => {
+            try {
+              socket.write(chunk, (err) => err ? rej(err) : res());
+            } catch (e) {
+              rej(e);
+            }
+          });
+        },
+        close() {
+          socket.end();
+        },
+        abort() {
+          socket.destroy();
+        }
+      });
+      socket.on("connect", () => {
+        clearTimeout(timer);
+        openedResolve();
+        socket.resume();
+      });
+      socket.on("data", (d) => {
+        socket.pause();
+        try {
+          ctrl.enqueue(new Uint8Array(d));
+        } catch (e) {
+        }
+      });
+      socket.on("error", (e) => {
+        clearTimeout(timer);
+        openedReject(e);
+        try {
+          ctrl.error(e);
+        } catch (x) {
+        }
+      });
+      socket.on("close", () => {
+        clearTimeout(timer);
+        closedResolve();
+        try {
+          ctrl.close();
+        } catch (e) {
+        }
+      });
+      return {
+        readable,
+        writable,
+        opened,
+        closed,
+        close() {
+          try {
+            socket.destroy();
+          } catch (e) {
+          }
+          return Promise.resolve();
+        }
+      };
+    }
+    module2.exports = { connect: connect2 };
+  }
+});
+
+// entry.js
+var entry_exports = {};
+__export(entry_exports, {
+  MTProtoClient: () => MTProtoClient,
+  TLReader: () => TLReader,
+  TLWriter: () => TLWriter,
+  checkAccount: () => checkAccount,
+  parseProxyUrl: () => parseProxyUrl,
+  runTasks: () => runTasks
+});
+module.exports = __toCommonJS(entry_exports);
+
+// src/mtp.js
+var import_cloudflare_sockets = __toESM(require_cf_sockets());
+var TEXT_ENC = new TextEncoder();
+var TEXT_DEC = new TextDecoder();
+var TG_DCS = {
+  1: { ip: "149.154.175.53", port: 443 },
+  2: { ip: "149.154.167.50", port: 443 },
+  3: { ip: "149.154.175.100", port: 443 },
+  4: { ip: "149.154.167.91", port: 443 },
+  5: { ip: "91.108.56.130", port: 443 }
+};
+var TG_RSA_KEYS = [
+  {
+    fpBytes: new Uint8Array([133, 253, 100, 222, 133, 29, 157, 208]),
+    fpHex: "85fd64de851d9dd0",
+    e: 65537n,
+    n: BigInt("0xe8bb3305c0b52c6cf2afdf7637313489e63e05268e5badb601af417786472e5f93b85438968e20e6729a301c0afc121bf7151f834436f7fda680847a66bf64accec78ee21c0b316f0edafe2f41908da7bd1f4a5107638eeb67040ace472a14f90d9f7c2b7def99688ba3073adb5750bb02964902a359fe745d8170e36876d4fd8a5d41b2a76cbff9a13267eb9580b2d06d10357448d20d9da2191cb5d8c93982961cdfdeda629e37f1fb09a0722027696032fe61ed663db7a37f6f263d370f69db53a0dc0a1748bdaaff6209d5645485e6e001d1953255757e4b8e42813347b11da6ab500fd0ace7e6dfa3736199ccaf9397ed0745a427dcfa6cd67bcb1acff3")
+  }
+];
+var MTPROTO_LAYER = 158;
+function concatBytes(...arrays) {
+  let total = 0;
+  for (const a of arrays) total += a.length;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const a of arrays) {
+    out.set(a, off);
+    off += a.length;
+  }
+  return out;
+}
+function bytesToHex(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) {
+    s += bytes[i].toString(16).padStart(2, "0");
+  }
+  return s;
+}
+function hexToBytes(hex) {
+  const clean = hex.replace(/[^0-9a-fA-F]/g, "");
+  const out = new Uint8Array(clean.length >>> 1);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+function bytesToBase64Url(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function base64UrlToBytes(b64url) {
+  let b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  while (b64.length % 4) b64 += "=";
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function randomBytes(n) {
+  const b = new Uint8Array(n);
+  crypto.getRandomValues(b);
+  return b;
+}
+function xorBytes(a, b) {
+  const out = new Uint8Array(a.length);
+  for (let i = 0; i < a.length; i++) out[i] = a[i] ^ b[i];
+  return out;
+}
+function bytesToBigIntBE(bytes) {
+  const hex = bytesToHex(bytes);
+  return hex ? BigInt("0x" + hex) : 0n;
+}
+function bigIntToBytesBE(num, length) {
+  let hex = num.toString(16);
+  if (hex.length % 2 !== 0) hex = "0" + hex;
+  const raw = hexToBytes(hex);
+  if (!length) return raw;
+  if (raw.length === length) return raw;
+  if (raw.length > length) return raw.subarray(raw.length - length);
+  const out = new Uint8Array(length);
+  out.set(raw, length - raw.length);
+  return out;
+}
+function modPow(base, exp, mod) {
+  let result = 1n;
+  let b = (base % mod + mod) % mod;
+  let e = exp;
+  while (e > 0n) {
+    if (e & 1n) result = result * b % mod;
+    e >>= 1n;
+    b = b * b % mod;
+  }
+  return result;
+}
+function gcdBigInt(a, b) {
+  while (b !== 0n) {
+    const t = a % b;
+    a = b;
+    b = t;
+  }
+  return a < 0n ? -a : a;
+}
+function factorizePQ(pqBytes) {
+  const n = bytesToBigIntBE(pqBytes);
+  if (n % 2n === 0n) {
+    const p2 = 2n, q2 = n / 2n;
+    return p2 < q2 ? [bigIntToBytesBE(p2), bigIntToBytesBE(q2)] : [bigIntToBytesBE(q2), bigIntToBytesBE(p2)];
+  }
+  let g = 1n;
+  for (let c = 1n; c < 64n && g === 1n; c++) {
+    let x = 2n, y = 2n, d = 1n;
+    const f = (v) => (v * v + c) % n;
+    while (d === 1n) {
+      x = f(x);
+      y = f(f(y));
+      const diff = x > y ? x - y : y - x;
+      d = gcdBigInt(diff, n);
+    }
+    if (d !== n) {
+      g = d;
+      break;
+    }
+  }
+  const other = n / g;
+  const p = g < other ? g : other;
+  const q = g < other ? other : g;
+  return [bigIntToBytesBE(p), bigIntToBytesBE(q)];
+}
+async function sha1(data) {
+  const buf = await crypto.subtle.digest("SHA-1", data);
+  return new Uint8Array(buf);
+}
+async function sha256(data) {
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  return new Uint8Array(buf);
+}
+var CRC32_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes) {
+  let crc = 4294967295;
+  for (let i = 0; i < bytes.length; i++) {
+    crc = CRC32_TABLE[(crc ^ bytes[i]) & 255] ^ crc >>> 8;
+  }
+  return (crc ^ 4294967295) >>> 0;
+}
+var [AES_SBOX, AES_INV_SBOX] = (() => {
+  const sbox = new Uint8Array(256);
+  const inv = new Uint8Array(256);
+  const rotl8 = (x, sh) => (x << sh | x >>> 8 - sh) & 255;
+  let p = 1, q = 1;
+  for (let i = 0; i < 255; i++) {
+    p = p ^ p << 1 ^ (p & 128 ? 283 : 0);
+    p &= 255;
+    q ^= q << 1;
+    q ^= q << 2;
+    q ^= q << 4;
+    q ^= q & 128 ? 9 : 0;
+    q &= 255;
+    const xformed = (q ^ rotl8(q, 1) ^ rotl8(q, 2) ^ rotl8(q, 3) ^ rotl8(q, 4) ^ 99) & 255;
+    sbox[p] = xformed;
+    inv[xformed] = p;
+  }
+  sbox[0] = 99;
+  inv[99] = 0;
+  return [sbox, inv];
+})();
+function xtime(a) {
+  return (a & 128 ? a << 1 ^ 283 : a << 1) & 255;
+}
+function gmul(a, b) {
+  let res = 0;
+  for (let i = 0; i < 8; i++) {
+    if (b & 1) res ^= a;
+    a = xtime(a);
+    b >>>= 1;
+  }
+  return res;
+}
+function expandKey256(key) {
+  const w = new Uint8Array(240);
+  w.set(key.subarray(0, 32), 0);
+  let rcon = 1;
+  for (let i = 8; i < 60; i++) {
+    const prev = (i - 1) * 4;
+    let t0 = w[prev], t1 = w[prev + 1], t2 = w[prev + 2], t3 = w[prev + 3];
+    if (i % 8 === 0) {
+      const tmp = t0;
+      t0 = AES_SBOX[t1] ^ rcon;
+      t1 = AES_SBOX[t2];
+      t2 = AES_SBOX[t3];
+      t3 = AES_SBOX[tmp];
+      rcon = xtime(rcon);
+    } else if (i % 8 === 4) {
+      t0 = AES_SBOX[t0];
+      t1 = AES_SBOX[t1];
+      t2 = AES_SBOX[t2];
+      t3 = AES_SBOX[t3];
+    }
+    const base = (i - 8) * 4;
+    const dst = i * 4;
+    w[dst] = w[base] ^ t0;
+    w[dst + 1] = w[base + 1] ^ t1;
+    w[dst + 2] = w[base + 2] ^ t2;
+    w[dst + 3] = w[base + 3] ^ t3;
+  }
+  return w;
+}
+function aes256EncryptBlock(block, w) {
+  const s = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) s[i] = block[i] ^ w[i];
+  const t = new Uint8Array(16);
+  for (let r = 1; r <= 14; r++) {
+    t[0] = AES_SBOX[s[0]];
+    t[1] = AES_SBOX[s[5]];
+    t[2] = AES_SBOX[s[10]];
+    t[3] = AES_SBOX[s[15]];
+    t[4] = AES_SBOX[s[4]];
+    t[5] = AES_SBOX[s[9]];
+    t[6] = AES_SBOX[s[14]];
+    t[7] = AES_SBOX[s[3]];
+    t[8] = AES_SBOX[s[8]];
+    t[9] = AES_SBOX[s[13]];
+    t[10] = AES_SBOX[s[2]];
+    t[11] = AES_SBOX[s[7]];
+    t[12] = AES_SBOX[s[12]];
+    t[13] = AES_SBOX[s[1]];
+    t[14] = AES_SBOX[s[6]];
+    t[15] = AES_SBOX[s[11]];
+    if (r < 14) {
+      for (let c = 0; c < 4; c++) {
+        const i = c * 4;
+        const a0 = t[i], a1 = t[i + 1], a2 = t[i + 2], a3 = t[i + 3];
+        const h = a0 ^ a1 ^ a2 ^ a3;
+        t[i] ^= h ^ xtime(a0 ^ a1);
+        t[i + 1] ^= h ^ xtime(a1 ^ a2);
+        t[i + 2] ^= h ^ xtime(a2 ^ a3);
+        t[i + 3] ^= h ^ xtime(a3 ^ a0);
+      }
+    }
+    const roff = r * 16;
+    for (let j = 0; j < 16; j++) s[j] = t[j] ^ w[roff + j];
+  }
+  return s;
+}
+function aes256DecryptBlock(block, w) {
+  const s = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) s[i] = block[i] ^ w[224 + i];
+  const t = new Uint8Array(16);
+  for (let r = 13; r >= 0; r--) {
+    t[0] = AES_INV_SBOX[s[0]];
+    t[1] = AES_INV_SBOX[s[13]];
+    t[2] = AES_INV_SBOX[s[10]];
+    t[3] = AES_INV_SBOX[s[7]];
+    t[4] = AES_INV_SBOX[s[4]];
+    t[5] = AES_INV_SBOX[s[1]];
+    t[6] = AES_INV_SBOX[s[14]];
+    t[7] = AES_INV_SBOX[s[11]];
+    t[8] = AES_INV_SBOX[s[8]];
+    t[9] = AES_INV_SBOX[s[5]];
+    t[10] = AES_INV_SBOX[s[2]];
+    t[11] = AES_INV_SBOX[s[15]];
+    t[12] = AES_INV_SBOX[s[12]];
+    t[13] = AES_INV_SBOX[s[9]];
+    t[14] = AES_INV_SBOX[s[6]];
+    t[15] = AES_INV_SBOX[s[3]];
+    const roff = r * 16;
+    for (let j = 0; j < 16; j++) s[j] = t[j] ^ w[roff + j];
+    if (r > 0) {
+      for (let c = 0; c < 4; c++) {
+        const i = c * 4;
+        const a0 = s[i], a1 = s[i + 1], a2 = s[i + 2], a3 = s[i + 3];
+        s[i] = gmul(a0, 14) ^ gmul(a1, 11) ^ gmul(a2, 13) ^ gmul(a3, 9);
+        s[i + 1] = gmul(a0, 9) ^ gmul(a1, 14) ^ gmul(a2, 11) ^ gmul(a3, 13);
+        s[i + 2] = gmul(a0, 13) ^ gmul(a1, 9) ^ gmul(a2, 14) ^ gmul(a3, 11);
+        s[i + 3] = gmul(a0, 11) ^ gmul(a1, 13) ^ gmul(a2, 9) ^ gmul(a3, 14);
+      }
+    }
+  }
+  return s;
+}
+function aes256IgeEncrypt(data, key, iv) {
+  const w = expandKey256(key);
+  const out = new Uint8Array(data.length);
+  let iv1 = iv.subarray(0, 16);
+  let iv2 = iv.subarray(16, 32);
+  const x = new Uint8Array(16);
+  for (let off = 0; off < data.length; off += 16) {
+    const p = data.subarray(off, off + 16);
+    for (let i = 0; i < 16; i++) x[i] = p[i] ^ iv1[i];
+    const enc = aes256EncryptBlock(x, w);
+    const c = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) c[i] = enc[i] ^ iv2[i];
+    out.set(c, off);
+    iv1 = c;
+    iv2 = p;
+  }
+  return out;
+}
+function aes256IgeDecrypt(data, key, iv) {
+  const w = expandKey256(key);
+  const out = new Uint8Array(data.length);
+  let iv1 = iv.subarray(0, 16);
+  let iv2 = iv.subarray(16, 32);
+  const x = new Uint8Array(16);
+  for (let off = 0; off < data.length; off += 16) {
+    const c = data.subarray(off, off + 16);
+    for (let i = 0; i < 16; i++) x[i] = c[i] ^ iv2[i];
+    const dec = aes256DecryptBlock(x, w);
+    const p = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) p[i] = dec[i] ^ iv1[i];
+    out.set(p, off);
+    iv1 = c;
+    iv2 = p;
+  }
+  return out;
+}
+var TLWriter = class {
+  constructor() {
+    this.parts = [];
+  }
+  writeInt32(v) {
+    const b = new Uint8Array(4);
+    new DataView(b.buffer).setInt32(0, v, true);
+    this.parts.push(b);
+    return this;
+  }
+  writeUInt32(v) {
+    const b = new Uint8Array(4);
+    new DataView(b.buffer).setUint32(0, v >>> 0, true);
+    this.parts.push(b);
+    return this;
+  }
+  writeInt64(bigVal) {
+    const b = new Uint8Array(8);
+    new DataView(b.buffer).setBigInt64(0, BigInt(bigVal), true);
+    this.parts.push(b);
+    return this;
+  }
+  writeRaw(bytes) {
+    this.parts.push(bytes);
+    return this;
+  }
+  writeBytes(bytes) {
+    const len = bytes.length;
+    if (len < 254) {
+      const pad = (4 - (len + 1) % 4) % 4;
+      const out = new Uint8Array(1 + len + pad);
+      out[0] = len;
+      out.set(bytes, 1);
+      this.parts.push(out);
+    } else {
+      const pad = (4 - len % 4) % 4;
+      const out = new Uint8Array(4 + len + pad);
+      out[0] = 254;
+      out[1] = len & 255;
+      out[2] = len >>> 8 & 255;
+      out[3] = len >>> 16 & 255;
+      out.set(bytes, 4);
+      this.parts.push(out);
+    }
+    return this;
+  }
+  writeString(str) {
+    return this.writeBytes(TEXT_ENC.encode(String(str)));
+  }
+  toBytes() {
+    return concatBytes(...this.parts);
+  }
+};
+var TLReader = class {
+  constructor(bytes, offset = 0) {
+    this.bytes = bytes;
+    this.offset = offset;
+    this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  }
+  readInt32() {
+    const v = this.view.getInt32(this.offset, true);
+    this.offset += 4;
+    return v;
+  }
+  readUInt32() {
+    const v = this.view.getUint32(this.offset, true);
+    this.offset += 4;
+    return v >>> 0;
+  }
+  readInt64() {
+    const v = this.view.getBigInt64(this.offset, true);
+    this.offset += 8;
+    return v;
+  }
+  readRaw(n) {
+    const s = this.bytes.subarray(this.offset, this.offset + n);
+    this.offset += n;
+    return s;
+  }
+  readBytes() {
+    const first = this.bytes[this.offset++];
+    let len = 0;
+    let pad = 0;
+    if (first < 254) {
+      len = first;
+      pad = (4 - (len + 1) % 4) % 4;
+    } else {
+      len = this.bytes[this.offset] | this.bytes[this.offset + 1] << 8 | this.bytes[this.offset + 2] << 16;
+      this.offset += 3;
+      pad = (4 - len % 4) % 4;
+    }
+    const out = this.bytes.subarray(this.offset, this.offset + len);
+    this.offset += len + pad;
+    return out;
+  }
+  readString() {
+    return TEXT_DEC.decode(this.readBytes());
+  }
+};
+var CloudflareTcpTransport = class {
+  constructor(proxy) {
+    this.proxy = proxy || null;
+    this.socket = null;
+    this.reader = null;
+    this.writer = null;
+    this.chunks = [];
+    this.totalLen = 0;
+    this.sendSeq = 0;
+  }
+  async connect(targetIp, targetPort) {
+    this.chunks = [];
+    this.totalLen = 0;
+    this.sendSeq = 0;
+    const useSocks = Boolean(this.proxy && this.proxy.host && this.proxy.port);
+    this.socket = (0, import_cloudflare_sockets.connect)({
+      hostname: useSocks ? this.proxy.host : targetIp,
+      port: useSocks ? Number(this.proxy.port) : Number(targetPort)
+    });
+    this.writer = this.socket.writable.getWriter();
+    this.reader = this.socket.readable.getReader();
+    if (useSocks) {
+      const hasAuth = Boolean(this.proxy.username && this.proxy.password);
+      await this.writer.write(hasAuth ? new Uint8Array([5, 2, 0, 2]) : new Uint8Array([5, 1, 0]));
+      const hRes = await this.readExactly(2);
+      if (hRes[0] !== 5 || hRes[1] === 255) {
+        throw new Error("SOCKS5 \u4EE3\u7406\u63E1\u624B\u534F\u5546\u5931\u8D25");
+      }
+      if (hRes[1] === 2) {
+        const u = TEXT_ENC.encode(this.proxy.username);
+        const p = TEXT_ENC.encode(this.proxy.password);
+        const authPkt = new Uint8Array(3 + u.length + p.length);
+        authPkt[0] = 1;
+        authPkt[1] = u.length;
+        authPkt.set(u, 2);
+        authPkt[2 + u.length] = p.length;
+        authPkt.set(p, 3 + u.length);
+        await this.writer.write(authPkt);
+        const aRes = await this.readExactly(2);
+        if (aRes[1] !== 0) throw new Error("SOCKS5 \u8D26\u53F7\u6216\u5BC6\u7801\u8BA4\u8BC1\u5931\u8D25");
+      }
+      const ipParts = targetIp.split(".").map(Number);
+      const connReq = new Uint8Array([
+        5,
+        1,
+        0,
+        1,
+        ipParts[0],
+        ipParts[1],
+        ipParts[2],
+        ipParts[3],
+        targetPort >>> 8 & 255,
+        targetPort & 255
+      ]);
+      await this.writer.write(connReq);
+      const rHead = await this.readExactly(4);
+      if (rHead[1] !== 0) {
+        throw new Error(`SOCKS5 \u65E0\u6CD5\u8FDE\u63A5 Telegram DC (${targetIp}:${targetPort})\uFF0C\u9519\u8BEF\u7801: ${rHead[1]}`);
+      }
+      if (rHead[3] === 1) await this.readExactly(6);
+      else if (rHead[3] === 3) {
+        const dLen = await this.readExactly(1);
+        await this.readExactly(dLen[0] + 2);
+      } else if (rHead[3] === 4) await this.readExactly(18);
+    }
+  }
+  async readExactly(size) {
+    while (this.totalLen < size) {
+      const { value, done } = await this.reader.read();
+      if (done || !value) throw new Error("\u8FDC\u7A0B Socket \u8FDE\u63A5\u5DF2\u65AD\u5F00 (EOF)");
+      this.chunks.push(value);
+      this.totalLen += value.length;
+    }
+    const combined = this.chunks.length === 1 ? this.chunks[0] : concatBytes(...this.chunks);
+    const out = combined.slice(0, size);
+    const rest = combined.slice(size);
+    this.chunks = rest.length > 0 ? [rest] : [];
+    this.totalLen = rest.length;
+    return out;
+  }
+  // MTProto TCP Full 协议封包发送
+  async sendPacket(payload) {
+    const totalLen = payload.length + 12;
+    const pkt = new Uint8Array(totalLen);
+    const dv = new DataView(pkt.buffer);
+    dv.setInt32(0, totalLen, true);
+    dv.setInt32(4, this.sendSeq++, true);
+    pkt.set(payload, 8);
+    const crc = crc32(pkt.subarray(0, totalLen - 4));
+    dv.setUint32(totalLen - 4, crc, true);
+    await this.writer.write(pkt);
+  }
+  // MTProto TCP Full 协议拆包接收
+  async recvPacket() {
+    const lenBuf = await this.readExactly(4);
+    const totalLen = new DataView(lenBuf.buffer, lenBuf.byteOffset, 4).getInt32(0, true);
+    if (totalLen < 0) {
+      throw new Error(`Telegram \u4F20\u8F93\u5C42\u8FD4\u56DE\u9519\u8BEF\u7801: ${totalLen}`);
+    }
+    const rest = await this.readExactly(totalLen - 4);
+    const payload = rest.subarray(4, totalLen - 8);
+    if (payload.length === 4) {
+      const code = new DataView(payload.buffer, payload.byteOffset, 4).getInt32(0, true);
+      if (code < 0) throw new Error(`MTProto \u4F20\u8F93\u5C42\u62D2\u7EDD\u8BF7\u6C42: ${code}`);
+    }
+    return payload;
+  }
+  async close() {
+    try {
+      if (this.reader) {
+        await this.reader.cancel().catch(() => {
+        });
+        this.reader.releaseLock();
+      }
+    } catch (e) {
+    }
+    try {
+      if (this.writer) {
+        await this.writer.close().catch(() => {
+        });
+        this.writer.releaseLock();
+      }
+    } catch (e) {
+    }
+    try {
+      if (this.socket) this.socket.close();
+    } catch (e) {
+    }
+  }
+};
+async function decompressGzip(bytes) {
+  const ds = new DecompressionStream("gzip");
+  const writer = ds.writable.getWriter();
+  writer.write(bytes);
+  writer.close();
+  const out = [];
+  const reader = ds.readable.getReader();
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    out.push(value);
+  }
+  return concatBytes(...out);
+}
+var MTProtoClient = class {
+  constructor(sessionStr, env) {
+    this.env = env || {};
+    this.apiId = Number(this.env.TG_API_ID || 2040);
+    this.apiHash = String(this.env.TG_API_HASH || "b18441a1ff607e10a989891a5462e627");
+    this.proxy = this.env.S5_HOST && this.env.S5_PORT ? {
+      host: String(this.env.S5_HOST).trim(),
+      port: Number(this.env.S5_PORT),
+      username: this.env.S5_USER ? String(this.env.S5_USER).trim() : "",
+      password: this.env.S5_PASS ? String(this.env.S5_PASS).trim() : ""
+    } : null;
+    this.dcId = 2;
+    this.authKey = null;
+    this.authKeyId = null;
+    this.salt = randomBytes(8);
+    this.sessionId = randomBytes(8);
+    this.seqNo = 0;
+    this.lastMsgId = 0n;
+    this.inited = false;
+    this.transport = null;
+    if (sessionStr) this._loadSession(sessionStr);
+  }
+  _loadSession(str) {
+    try {
+      const parsed = JSON.parse(str);
+      if (parsed && parsed.authKey) {
+        this.dcId = Number(parsed.dcId || 2);
+        this.authKey = hexToBytes(parsed.authKey);
+        this.authKeyId = hexToBytes(parsed.authKeyId);
+        if (parsed.salt) this.salt = hexToBytes(parsed.salt);
+        return;
+      }
+    } catch (e) {
+    }
+    if (str.startsWith("1") && str.length > 300) {
+      const raw = base64UrlToBytes(str.slice(1));
+      if (raw.length >= 263) {
+        this.dcId = raw[0];
+        this.authKey = raw.slice(raw.length - 256);
+      }
+    }
+  }
+  saveSession() {
+    if (!this.authKey || !this.authKeyId) return "";
+    return JSON.stringify({
+      dcId: this.dcId,
+      authKey: bytesToHex(this.authKey),
+      authKeyId: bytesToHex(this.authKeyId),
+      salt: bytesToHex(this.salt)
+    });
+  }
+  _nextMsgId() {
+    const nowSec = BigInt(Math.floor(Date.now() / 1e3));
+    let id = nowSec << 32n | BigInt(Math.floor(Math.random() * 268435455) & ~3);
+    if (id <= this.lastMsgId) id = this.lastMsgId + 4n;
+    this.lastMsgId = id;
+    return id;
+  }
+  _nextSeqNo(contentRelated = true) {
+    const s = this.seqNo * 2 + (contentRelated ? 1 : 0);
+    if (contentRelated) this.seqNo++;
+    return s;
+  }
+  async connect() {
+    const dc = TG_DCS[this.dcId] || TG_DCS[2];
+    this.transport = new CloudflareTcpTransport(this.proxy);
+    await this.transport.connect(dc.ip, dc.port);
+    if (this.authKey && !this.authKeyId) {
+      this.authKeyId = (await sha1(this.authKey)).subarray(12, 20);
+    }
+    if (!this.authKey) {
+      await this._performDHHandshake();
+    }
+  }
+  async switchDC(newDcId) {
+    await this.disconnect();
+    this.dcId = Number(newDcId);
+    this.authKey = null;
+    this.authKeyId = null;
+    this.salt = randomBytes(8);
+    this.sessionId = randomBytes(8);
+    this.seqNo = 0;
+    this.inited = false;
+    await this.connect();
+  }
+  async disconnect() {
+    if (this.transport) {
+      await this.transport.close();
+      this.transport = null;
+    }
+  }
+  async _sendUnencrypted(tlBytes) {
+    const w = new TLWriter().writeInt64(0n).writeInt64(this._nextMsgId()).writeInt32(tlBytes.length).writeRaw(tlBytes);
+    await this.transport.sendPacket(w.toBytes());
+    const resp = await this.transport.recvPacket();
+    const r = new TLReader(resp);
+    r.readInt64();
+    r.readInt64();
+    const len = r.readInt32();
+    return new TLReader(r.readRaw(len));
+  }
+  // MTProto 2.0 RSA_PAD 混合加密实现 + 完整 DH-2048 握手
+  async _performDHHandshake() {
+    const nonce = randomBytes(16);
+    const reqPq = new TLWriter().writeUInt32(3195965169).writeRaw(nonce).toBytes();
+    const resPqReader = await this._sendUnencrypted(reqPq);
+    const ctor1 = resPqReader.readUInt32();
+    if (ctor1 !== 85337187) throw new Error(`\u63E1\u624B\u9636\u6BB51\u5931\u8D25: \u672A\u77E5\u6784\u9020\u5668 0x${ctor1.toString(16)}`);
+    resPqReader.readRaw(16);
+    const serverNonce = resPqReader.readRaw(16);
+    const pqBytes = resPqReader.readBytes();
+    resPqReader.readUInt32();
+    const fpCount = resPqReader.readInt32();
+    let matchedKey = TG_RSA_KEYS[0];
+    for (let i = 0; i < fpCount; i++) {
+      const fpRaw = resPqReader.readRaw(8);
+      const fpHex = bytesToHex(fpRaw);
+      const found = TG_RSA_KEYS.find((k) => k.fpHex === fpHex);
+      if (found) matchedKey = found;
+    }
+    const [pBytes, qBytes] = factorizePQ(pqBytes);
+    const newNonce = randomBytes(32);
+    const innerData = new TLWriter().writeUInt32(2851430293).writeBytes(pqBytes).writeBytes(pBytes).writeBytes(qBytes).writeRaw(nonce).writeRaw(serverNonce).writeRaw(newNonce).writeInt32(this.dcId).toBytes();
+    const padLen = 192 - innerData.length;
+    const dataWithPad = concatBytes(innerData, randomBytes(padLen));
+    const dataRev = new Uint8Array(192);
+    for (let i = 0; i < 192; i++) dataRev[i] = dataWithPad[191 - i];
+    let rsaEncrypted = null;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const tempKey = randomBytes(32);
+      const dataWithHash = concatBytes(dataRev, await sha256(concatBytes(tempKey, dataWithPad)));
+      const aesEncrypted = aes256IgeEncrypt(dataWithHash, tempKey, new Uint8Array(32));
+      const tempKeyXor = xorBytes(tempKey, await sha256(aesEncrypted));
+      const keyAesEnc = concatBytes(tempKeyXor, aesEncrypted);
+      const keyAesInt = bytesToBigIntBE(keyAesEnc);
+      if (keyAesInt < matchedKey.n) {
+        const resInt = modPow(keyAesInt, matchedKey.e, matchedKey.n);
+        rsaEncrypted = bigIntToBytesBE(resInt, 256);
+        break;
+      }
+    }
+    const reqDh = new TLWriter().writeUInt32(3608339646).writeRaw(nonce).writeRaw(serverNonce).writeBytes(pBytes).writeBytes(qBytes).writeRaw(matchedKey.fpBytes).writeBytes(rsaEncrypted).toBytes();
+    const dhResReader = await this._sendUnencrypted(reqDh);
+    const ctor2 = dhResReader.readUInt32();
+    if (ctor2 !== 3504867164) throw new Error(`\u63E1\u624B\u9636\u6BB52\u5931\u8D25 (Server_DH_Params): 0x${ctor2.toString(16)}`);
+    dhResReader.readRaw(16);
+    dhResReader.readRaw(16);
+    const encAnswer = dhResReader.readBytes();
+    const h1 = await sha1(concatBytes(newNonce, serverNonce));
+    const h2 = await sha1(concatBytes(serverNonce, newNonce));
+    const h3 = await sha1(concatBytes(newNonce, newNonce));
+    const tmpAesKey = concatBytes(h1, h2.subarray(0, 12));
+    const tmpAesIv = concatBytes(h2.subarray(12, 20), h3, newNonce.subarray(0, 4));
+    const decAnswer = aes256IgeDecrypt(encAnswer, tmpAesKey, tmpAesIv);
+    const innerReader = new TLReader(decAnswer, 20);
+    const ctor3 = innerReader.readUInt32();
+    if (ctor3 !== 3045658042) throw new Error(`server_DH_inner_data \u6821\u9A8C\u5931\u8D25: 0x${ctor3.toString(16)}`);
+    innerReader.readRaw(16);
+    innerReader.readRaw(16);
+    const g = BigInt(innerReader.readInt32());
+    const dhPrimeBytes = innerReader.readBytes();
+    const gABytes = innerReader.readBytes();
+    innerReader.readInt32();
+    const dhPrime = bytesToBigIntBE(dhPrimeBytes);
+    const gA = bytesToBigIntBE(gABytes);
+    const b = bytesToBigIntBE(randomBytes(256));
+    const gBBytes = bigIntToBytesBE(modPow(g, b, dhPrime), 256);
+    const authKeyBytes = bigIntToBytesBE(modPow(gA, b, dhPrime), 256);
+    const clientInner = new TLWriter().writeUInt32(1715713620).writeRaw(nonce).writeRaw(serverNonce).writeInt64(0n).writeBytes(gBBytes).toBytes();
+    const clientHash = await sha1(clientInner);
+    const clientPadLen = (16 - (20 + clientInner.length) % 16) % 16;
+    const encClientInner = aes256IgeEncrypt(
+      concatBytes(clientHash, clientInner, randomBytes(clientPadLen)),
+      tmpAesKey,
+      tmpAesIv
+    );
+    const setDhReq = new TLWriter().writeUInt32(4110704415).writeRaw(nonce).writeRaw(serverNonce).writeBytes(encClientInner).toBytes();
+    const dhGenReader = await this._sendUnencrypted(setDhReq);
+    const ctor4 = dhGenReader.readUInt32();
+    if (ctor4 !== 1003222836) throw new Error(`DH \u5BC6\u94A5\u534F\u5546\u6700\u7EC8\u786E\u8BA4\u5931\u8D25: 0x${ctor4.toString(16)}`);
+    this.authKey = authKeyBytes;
+    this.authKeyId = (await sha1(authKeyBytes)).subarray(12, 20);
+    this.salt = xorBytes(newNonce.subarray(0, 8), serverNonce.subarray(0, 8));
+  }
+  async _deriveMtproto2Keys(msgKey, x) {
+    const sha256a = await sha256(concatBytes(msgKey, this.authKey.subarray(x, x + 36)));
+    const sha256b = await sha256(concatBytes(this.authKey.subarray(40 + x, 40 + x + 36), msgKey));
+    const aesKey = concatBytes(sha256a.subarray(0, 8), sha256b.subarray(8, 24), sha256a.subarray(24, 32));
+    const aesIv = concatBytes(sha256b.subarray(0, 8), sha256a.subarray(8, 24), sha256b.subarray(24, 32));
+    return { aesKey, aesIv };
+  }
+  async _encryptMessage(tlBody, contentRelated = true) {
+    const msgId = this._nextMsgId();
+    const seqNo = this._nextSeqNo(contentRelated);
+    const header = new TLWriter().writeRaw(this.salt).writeRaw(this.sessionId).writeInt64(msgId).writeInt32(seqNo).writeInt32(tlBody.length).writeRaw(tlBody).toBytes();
+    let padLen = (16 - header.length % 16) % 16;
+    if (padLen < 12) padLen += 16;
+    const plain = concatBytes(header, randomBytes(padLen));
+    const msgKeyLarge = await sha256(concatBytes(this.authKey.subarray(88, 120), plain));
+    const msgKey = msgKeyLarge.subarray(8, 24);
+    const { aesKey, aesIv } = await this._deriveMtproto2Keys(msgKey, 0);
+    const encrypted = aes256IgeEncrypt(plain, aesKey, aesIv);
+    return {
+      msgId,
+      packet: concatBytes(this.authKeyId, msgKey, encrypted)
+    };
+  }
+  async _decryptPacket(packet) {
+    const msgKey = packet.subarray(8, 24);
+    const encrypted = packet.subarray(24);
+    const { aesKey, aesIv } = await this._deriveMtproto2Keys(msgKey, 8);
+    const plain = aes256IgeDecrypt(encrypted, aesKey, aesIv);
+    const dv = new DataView(plain.buffer, plain.byteOffset, plain.byteLength);
+    const msgLen = dv.getInt32(28, true);
+    return plain.subarray(32, 32 + msgLen);
+  }
+  async _parseIncomingBody(body, targetMsgId, state) {
+    const r = new TLReader(body);
+    const ctor = r.readUInt32();
+    if (ctor === 1945237724) {
+      const count = r.readInt32();
+      for (let i = 0; i < count; i++) {
+        r.readInt64();
+        r.readInt32();
+        const len = r.readInt32();
+        const inner = r.readRaw(len);
+        await this._parseIncomingBody(inner, targetMsgId, state);
+      }
+      return;
+    }
+    if (ctor === 812830625) {
+      const unzipped = await decompressGzip(r.readBytes());
+      await this._parseIncomingBody(unzipped, targetMsgId, state);
+      return;
+    }
+    if (ctor === 2663516424) {
+      r.readInt64();
+      r.readInt64();
+      this.salt = r.readRaw(8);
+      return;
+    }
+    if (ctor === 3987424379) {
+      r.readInt64();
+      r.readInt32();
+      r.readInt32();
+      this.salt = r.readRaw(8);
+      state.retrySalt = true;
+      return;
+    }
+    if (ctor === 4082920705) {
+      const reqMsgId = r.readInt64();
+      let resBytes = r.readRaw(body.length - r.offset);
+      const innerCtor = new DataView(resBytes.buffer, resBytes.byteOffset, 4).getUint32(0, true);
+      if (innerCtor === 812830625) {
+        const gr = new TLReader(resBytes, 4);
+        resBytes = await decompressGzip(gr.readBytes());
+      }
+      const checkCtor = new DataView(resBytes.buffer, resBytes.byteOffset, 4).getUint32(0, true);
+      if (checkCtor === 558156313) {
+        const er = new TLReader(resBytes, 4);
+        const code = er.readInt32();
+        const msg = er.readString();
+        const err = new Error(msg);
+        err.errorCode = code;
+        err.errorMessage = msg;
+        state.error = err;
+        return;
+      }
+      if (reqMsgId === targetMsgId) {
+        state.result = resBytes;
+      }
+    }
+  }
+  async invoke(innerPayload) {
+    let payloadToSend = innerPayload;
+    if (!this.inited) {
+      payloadToSend = new TLWriter().writeUInt32(3667594509).writeInt32(MTPROTO_LAYER).writeUInt32(3251461801).writeInt32(0).writeInt32(this.apiId).writeString("Cloudflare Worker").writeString("Linux 6.1").writeString("4.16.8").writeString("zh").writeString("").writeString("zh").writeRaw(innerPayload).toBytes();
+      this.inited = true;
+    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const { msgId, packet } = await this._encryptMessage(payloadToSend, true);
+      await this.transport.sendPacket(packet);
+      const state = { result: null, error: null, retrySalt: false };
+      for (let step = 0; step < 8; step++) {
+        const rawPkt = await this.transport.recvPacket();
+        const body = await this._decryptPacket(rawPkt);
+        await this._parseIncomingBody(body, msgId, state);
+        if (state.error) throw state.error;
+        if (state.result) return new TLReader(state.result);
+        if (state.retrySalt) break;
+      }
+    }
+    throw new Error("MTProto \u8BF7\u6C42\u7B49\u5F85\u54CD\u5E94\u8D85\u65F6");
+  }
+  // 解析 Layer 158 User#8f97c628 真实昵称、@用户名、手机号
+  _parseUserFromReader(r) {
+    const ctor = r.readUInt32();
+    if (ctor !== 2409088552) {
+      return { id: 0n, accessHash: 0n, firstName: "Telegram \u7528\u6237", lastName: "", username: "", phone: "" };
+    }
+    const flags = r.readInt32();
+    r.readInt32();
+    const id = r.readInt64();
+    const accessHash = flags & 1 ? r.readInt64() : 0n;
+    const firstName = flags & 2 ? r.readString() : "";
+    const lastName = flags & 4 ? r.readString() : "";
+    const username = flags & 8 ? r.readString() : "";
+    const phone = flags & 16 ? r.readString() : "";
+    return { id, accessHash, firstName, lastName, username, phone };
+  }
+  // 调用 users.getUsers#0d91a548([inputUserSelf#f7c1b13f]) 获取当前登录真人信息
+  async getMe() {
+    const req = new TLWriter().writeUInt32(227648840).writeUInt32(481674261).writeInt32(1).writeUInt32(4156666175).toBytes();
+    const r = await this.invoke(req);
+    r.readUInt32();
+    const count = r.readInt32();
+    if (count < 1) throw new Error("\u672A\u80FD\u83B7\u53D6\u5230\u5F53\u524D\u767B\u5F55\u8D26\u53F7\u4FE1\u606F");
+    return this._parseUserFromReader(r);
+  }
+  // 解析 @bot_username 并发送真实签到消息
+  async sendMessageToUsername(username, messageText) {
+    const cleanName = String(username).replace(/^@/, "").trim();
+    const resolveReq = new TLWriter().writeUInt32(4181511075).writeString(cleanName).toBytes();
+    const r = await this.invoke(resolveReq);
+    const ctor = r.readUInt32();
+    if (ctor !== 2131196633) throw new Error(`\u627E\u4E0D\u5230\u76EE\u6807\u673A\u5668\u4EBA @${cleanName}`);
+    const peerCtor = r.readUInt32();
+    r.readInt64();
+    r.readUInt32();
+    const chatCount = r.readInt32();
+    let inputPeerBytes = null;
+    if (peerCtor === 1498486562 && chatCount === 0) {
+      r.readUInt32();
+      r.readInt32();
+      const u = this._parseUserFromReader(r);
+      inputPeerBytes = new TLWriter().writeUInt32(3723011404).writeInt64(u.id).writeInt64(u.accessHash).toBytes();
+    } else {
+      r.readUInt32();
+      const cFlags = r.readInt32();
+      r.readInt32();
+      const channelId = r.readInt64();
+      const accessHash = cFlags & 8192 ? r.readInt64() : 0n;
+      inputPeerBytes = new TLWriter().writeUInt32(666680316).writeInt64(channelId).writeInt64(accessHash).toBytes();
+    }
+    const randomId = BigInt(Math.floor(Math.random() * 2147483647)) << 32n | BigInt(Math.floor(Math.random() * 4294967295));
+    const sendReq = new TLWriter().writeUInt32(228423076).writeInt32(0).writeRaw(inputPeerBytes).writeString(messageText).writeInt64(randomId).toBytes();
+    await this.invoke(sendReq);
+    return { id: (randomId & 0xffffffffn).toString() };
+  }
+  // ==================== 执行层：目标解析 / 发送 / 历史 / 按钮 ====================
+  async resolvePeer(target) {
+    const raw = String(target == null ? "" : target).trim();
+    if (!raw) throw new Error("\u4EFB\u52A1\u6CA1\u6709\u586B\u76EE\u6807\uFF08\u673A\u5668\u4EBA @\u7528\u6237\u540D\uFF09");
+    if (/^-?\d+$/.test(raw)) throw new Error("\u76EE\u6807\u5199\u6210\u4E86\u7EAF\u6570\u5B57 ID\uFF1A\u672C\u7248\u672C\u8BF7\u6539\u6210\u673A\u5668\u4EBA @\u7528\u6237\u540D");
+    const name = raw.replace(/^@/, "");
+    const r = await this.invoke(new TLWriter().writeUInt32(4181511075).writeString(name).toBytes());
+    if (r.readUInt32() !== 2131196633) throw new Error("\u627E\u4E0D\u5230\u76EE\u6807 @" + name);
+    const peerCtor = r.readUInt32();
+    if (peerCtor === 1498486562) {
+      const userId = r.readInt64();
+      r.readUInt32();
+      const chatCount = r.readInt32();
+      if (chatCount > 0) throw new Error("\u76EE\u6807\u89E3\u6790\u5F02\u5E38\uFF1A\u7528\u6237\u76EE\u6807\u5374\u8FD4\u56DE\u4E86\u7FA4\u7EC4");
+      r.readUInt32();
+      const userCount = r.readInt32();
+      if (userCount < 1) throw new Error("\u627E\u4E0D\u5230\u76EE\u6807 @" + name);
+      const u = this._parseUserFromReader(r);
+      const id = u.id || userId;
+      if (!u.accessHash) throw new Error("\u65E0\u6CD5\u83B7\u53D6 @" + name + " \u7684 access_hash");
+      return {
+        kind: "user",
+        id,
+        title: u.username ? "@" + u.username : name,
+        inputPeer: new TLWriter().writeUInt32(3723011404).writeInt64(id).writeInt64(u.accessHash).toBytes()
+      };
+    }
+    if (peerCtor === 918946202) {
+      const chatId = r.readInt64();
+      return {
+        kind: "chat",
+        id: chatId,
+        title: name,
+        inputPeer: new TLWriter().writeUInt32(900291769).writeInt64(chatId).toBytes()
+      };
+    }
+    if (peerCtor === 2728736542 || peerCtor === 2728863067) {
+      const channelId = r.readInt64();
+      r.readUInt32();
+      const chatCount = r.readInt32();
+      let accessHash = 0n;
+      for (let i = 0; i < chatCount; i++) {
+        const ctor = r.readUInt32();
+        if (ctor !== 4265900221 && ctor !== 2200278116) throw new Error("\u76EE\u6807\u7FA4\u7EC4\u89E3\u6790\u5931\u8D25");
+        const flags = r.readUInt32();
+        if (ctor === 4265900221) r.readUInt32();
+        const id = r.readInt64();
+        const ah = flags & 8192 ? r.readInt64() : 0n;
+        if (id === channelId) accessHash = ah;
+        break;
+      }
+      if (!accessHash) throw new Error("\u65E0\u6CD5\u83B7\u53D6\u76EE\u6807\u7FA4\u7EC4\u7684 access_hash");
+      return {
+        kind: "channel",
+        id: channelId,
+        title: name,
+        inputPeer: new TLWriter().writeUInt32(666680316).writeInt64(channelId).writeInt64(accessHash).toBytes()
+      };
+    }
+    throw new Error("\u76EE\u6807\u7C7B\u578B\u6682\u4E0D\u652F\u6301");
+  }
+  _skipFwdHeader(r) {
+    const ctor = r.readUInt32();
+    if (ctor !== 1313731771) throw new Error("fwd header " + ctor.toString(16));
+    const f = r.readUInt32();
+    if (f & 1) this._skipPeer(r);
+    if (f & 32) r.readString();
+    r.readInt32();
+    if (f & 4) r.readInt32();
+    if (f & 8) r.readString();
+    if (f & 16) {
+      this._skipPeer(r);
+      r.readInt32();
+    }
+    if (f & 256) this._skipPeer(r);
+    if (f & 512) r.readString();
+    if (f & 1024) r.readInt32();
+    if (f & 64) r.readString();
+  }
+  _skipReplyHeader(r) {
+    const ctor = r.readUInt32();
+    if (ctor === 2799007587) {
+      const f0 = r.readUInt32();
+      r.readInt32();
+      if (f0 & 1) this._skipPeer(r);
+      if (f0 & 2) r.readInt32();
+      return;
+    }
+    if (ctor !== 2948336091) throw new Error("reply header " + ctor.toString(16));
+    const f = r.readUInt32();
+    if (f & 16) r.readInt32();
+    if (f & 1) this._skipPeer(r);
+    if (f & 32) this._skipFwdHeader(r);
+    if (f & 256) throw new Error("reply media");
+    if (f & 2) r.readInt32();
+    if (f & 64) r.readString();
+    if (f & 128) throw new Error("reply quote entities");
+    if (f & 1024) r.readInt32();
+  }
+  _skipPeer(r) {
+    const c = r.readUInt32();
+    if (c === 1498486562 || c === 2728736542 || c === 2728863067 || c === 918946202) {
+      r.readInt64();
+      return;
+    }
+    throw new Error("peer?");
+  }
+  async sendText(inputPeer, text) {
+    const randomId = BigInt(Math.floor(Math.random() * 2147483647)) << 32n | BigInt(Math.floor(Math.random() * 4294967295));
+    const req = new TLWriter().writeUInt32(228423076).writeInt32(0).writeRaw(inputPeer).writeString(text).writeInt64(randomId).toBytes();
+    const r = await this.invoke(req);
+    return { randomId, msgId: this._sentIdFromUpdates(r, randomId) };
+  }
+  _sentIdFromUpdates(r, randomId) {
+    try {
+      const ctor = r.readUInt32();
+      if (ctor === 1957577280) {
+        r.readUInt32();
+        if (r.readUInt32() !== 481674261) return 0;
+        const n = r.readInt32();
+        for (let i = 0; i < n; i++) {
+          const c = r.readUInt32();
+          if (c === 1318109142) {
+            const id = r.readInt32();
+            const rid = r.readInt64();
+            if (rid === randomId) return id;
+          } else {
+            return 0;
+          }
+        }
+      } else if (ctor === 2417357404) {
+        r.readUInt32();
+        return r.readInt32();
+      } else if (ctor === 2027216577) {
+        if (r.readUInt32() === 1318109142) {
+          const id = r.readInt32();
+          r.readInt64();
+          return id;
+        }
+      }
+    } catch (e) {
+    }
+    return 0;
+  }
+  async historyPage(inputPeer, opts) {
+    const o = opts || {};
+    const req = new TLWriter().writeUInt32(1143203525).writeRaw(inputPeer).writeInt32(o.offsetId || 0).writeInt32(0).writeInt32(0).writeInt32(o.limit || 1).writeInt32(0).writeInt32(o.minId || 0).writeInt64(0n).toBytes();
+    const r = await this.invoke(req);
+    const ctor = r.readUInt32();
+    if (ctor === 978610270) {
+      const flags = r.readUInt32();
+      r.readInt32();
+      if (flags & 1) r.readInt32();
+      if (flags & 4) r.readInt32();
+    } else if (ctor === 3346446926) {
+      const flags = r.readUInt32();
+      r.readInt32();
+      r.readInt32();
+      if (flags & 4) r.readInt32();
+    } else if (ctor !== 2356252295) {
+      throw new Error("\u5386\u53F2\u6D88\u606F\u54CD\u5E94\u5F02\u5E38: 0x" + ctor.toString(16));
+    }
+    if (r.readUInt32() !== 481674261) throw new Error("\u5386\u53F2\u6D88\u606F\u683C\u5F0F\u5F02\u5E38");
+    const n = r.readInt32();
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const m = this._readMessage(r);
+      if (!m) break;
+      out.push(m);
+    }
+    return out;
+  }
+  _readMessage(r) {
+    const start = r.offset;
+    const orders = this._msgOrder ? [this._msgOrder] : ["peer-first", "from-first"];
+    for (let i = 0; i < orders.length; i++) {
+      r.offset = start;
+      const m = this._readMessageAs(r, orders[i]);
+      if (m) {
+        this._msgOrder = orders[i];
+        return m;
+      }
+    }
+    r.offset = start;
+    return null;
+  }
+  _readMessageAs(r, order) {
+    try {
+      const mctor = r.readUInt32();
+      if (mctor !== 940666592) return null;
+      const flags = r.readUInt32();
+      const id = r.readInt32();
+      if (order === "from-first") {
+        if (flags & 256) this._skipPeer(r);
+        this._skipPeer(r);
+      } else {
+        this._skipPeer(r);
+        if (flags & 256) this._skipPeer(r);
+      }
+      if (flags & 4) this._skipFwdHeader(r);
+      if (flags & 8) this._skipReplyHeader(r);
+      const date = r.readInt32();
+      const text = r.readString();
+      if (text.length > 4096 || text.indexOf("\uFFFD") >= 0) return null;
+      const msg = { id, date, text, out: !!(flags & 2), buttons: null };
+      if (flags & 512) {
+        if (!this._skipMedia(r)) return msg;
+      }
+      if (flags & 64) {
+        const at = r.offset;
+        const mc = (r.bytes[r.offset] | r.bytes[r.offset + 1] << 8 | r.bytes[r.offset + 2] << 16 | r.bytes[r.offset + 3] << 24) >>> 0;
+        if (mc !== 1218642516 && mc !== 2245892561 && mc !== 2688441221) return msg;
+        r.offset = at;
+        msg.buttons = this._readMarkup(r);
+      }
+      return msg;
+    } catch (e) {
+      return null;
+    }
+  }
+  _skipVector(r, fn) {
+    if (r.readUInt32() !== 481674261) throw new Error("vector?");
+    const n = r.readInt32();
+    for (let i = 0; i < n; i++) fn(r);
+  }
+  _skipPhotoSize(r) {
+    const c = r.readUInt32();
+    if (c === 1976012384) {
+      r.readString();
+      r.readInt32();
+      r.readInt32();
+      r.readInt32();
+    } else if (c === 35527382) {
+      r.readString();
+      r.readInt32();
+      r.readInt32();
+      r.readBytes();
+    } else if (c === 3769678894) {
+      r.readString();
+      r.readBytes();
+    } else if (c === 4198431637) {
+      r.readString();
+      r.readInt32();
+      r.readInt32();
+      this._skipVector(r, function(rr) {
+        rr.readInt32();
+      });
+    } else if (c === 3626061121) {
+      r.readString();
+      r.readBytes();
+    } else {
+      throw new Error("photoSize?");
+    }
+  }
+  _skipDocument(r) {
+    const f = r.readUInt32();
+    r.readInt64();
+    r.readInt64();
+    r.readBytes();
+    r.readInt32();
+    r.readString();
+    r.readRaw(8);
+    const self = this;
+    if (f & 1) self._skipVector(r, function(rr) {
+      self._skipPhotoSize(rr);
+    });
+    if (f & 2) self._skipVector(r, function(rr) {
+      rr.readString();
+      rr.readInt32();
+      rr.readInt32();
+      rr.readInt32();
+    });
+    r.readInt32();
+    self._skipVector(r, function(rr) {
+      self._skipDocAttr(rr);
+    });
+  }
+  _skipDocAttr(r) {
+    const c = r.readUInt32();
+    if (c === 358154344) {
+      r.readString();
+      return;
+    }
+    if (c === 1815593308) {
+      r.readInt32();
+      r.readInt32();
+      return;
+    }
+    if (c === 297109817 || c === 3246071453) return;
+    if (c === 2555574726) {
+      const f = r.readUInt32();
+      r.readInt32();
+      if (f & 1) r.readString();
+      if (f & 2) r.readString();
+      if (f & 4) r.readBytes();
+      return;
+    }
+    if (c === 1137015880) {
+      const f = r.readUInt32();
+      r.readInt32();
+      r.readInt32();
+      r.readInt32();
+      if (f & 1) r.readRaw(8);
+      return;
+    }
+    if (c === 4245985433) {
+      r.readInt64();
+      return;
+    }
+    if (c === 1662637586) {
+      const f = r.readUInt32();
+      r.readString();
+      r.readInt64();
+      r.readInt64();
+      if (f & 1) {
+        const fl = r.readUInt32();
+        if (fl & 1) r.readRaw(8);
+        if (fl & 2) r.readRaw(8);
+      }
+      r.readInt32();
+      return;
+    }
+    if (c === 3727929492) {
+      rrSkip();
+      return;
+    }
+    throw new Error("docAttr?");
+    function rrSkip() {
+    }
+  }
+  _skipPhoto(r) {
+    const f = r.readUInt32();
+    r.readInt64();
+    r.readInt64();
+    r.readBytes();
+    r.readInt32();
+    const self = this;
+    self._skipVector(r, function(rr) {
+      self._skipPhotoSize(rr);
+    });
+    r.readInt32();
+    if (f & 1) self._skipVector(r, function(rr) {
+      rr.readString();
+      rr.readInt32();
+      rr.readInt32();
+      rr.readInt32();
+    });
+    if (f & 2) self._skipVector(r, function(rr) {
+      rr.readString();
+      rr.readInt32();
+      rr.readInt32();
+      rr.readInt32();
+    });
+  }
+  _skipMedia(r) {
+    try {
+      const ctor = r.readUInt32();
+      if (ctor === 1038967584 || ctor === 2676290718) return true;
+      if (ctor === 1766936791) {
+        const f = r.readUInt32();
+        if (f & 1) {
+          r.readUInt32();
+          this._skipPhoto(r);
+        }
+        if (f & 4) r.readInt32();
+        return true;
+      }
+      if (ctor === 80693892 || ctor === 2628808919) {
+        const f = r.readUInt32();
+        if (f & 1) {
+          r.readUInt32();
+          this._skipDocument(r);
+        }
+        if (f & 4) r.readInt32();
+        return true;
+      }
+      if (ctor === 3723562043 || ctor === 802824708) {
+        const f = r.readUInt32();
+        r.readUInt32();
+        this._skipWebPage(r);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+  _readMarkup(r) {
+    const ctor = r.readUInt32();
+    if (ctor === 2688441221) return [];
+    if (ctor === 1218642516) {
+    } else if (ctor === 2245892561) {
+      r.readUInt32();
+    } else {
+      return null;
+    }
+    if (r.readUInt32() !== 481674261) return null;
+    const rows = r.readInt32();
+    const out = [];
+    for (let i = 0; i < rows; i++) {
+      if (r.readUInt32() !== 2002815875) return out;
+      r.readUInt32();
+      const n = r.readInt32();
+      const row = [];
+      for (let j = 0; j < n; j++) {
+        const c = r.readUInt32();
+        const b = { text: "", data: null, url: "" };
+        if (c === 2734311552) {
+          b.text = r.readString();
+        } else if (c === 629866245) {
+          b.text = r.readString();
+          b.url = r.readString();
+        } else if (c === 901503851) {
+          r.readUInt32();
+          b.text = r.readString();
+          b.data = r.readBytes();
+        } else if (c === 280464681) {
+          const f = r.readUInt32();
+          b.text = r.readString();
+          if (f & 1) r.readString();
+          b.url = r.readString();
+          r.readInt32();
+        } else if (c === 2976541737 || c === 4235815743) {
+          b.text = r.readString();
+        } else if (c === 3150401885) {
+          const f = r.readUInt32();
+          if (f & 1) r.readUInt32();
+          b.text = r.readString();
+        } else {
+          return out;
+        }
+        row.push(b);
+      }
+      out.push(row);
+    }
+    return out;
+  }
+  async clickButton(inputPeer, msgId, data) {
+    const req = new TLWriter().writeUInt32(2470627847).writeInt32(data && data.length ? 1 : 0).writeRaw(inputPeer).writeInt32(msgId);
+    if (data && data.length) req.writeBytes(data);
+    const r = await this.invoke(req.toBytes());
+    if (r.readUInt32() !== 911761060) throw new Error("\u6309\u94AE\u70B9\u51FB\u54CD\u5E94\u5F02\u5E38");
+    const flags = r.readUInt32();
+    const message = flags & 1 ? r.readString() : "";
+    const url = flags & 4 ? r.readString() : "";
+    r.readInt32();
+    return { message, url, alert: !!(flags & 2) };
+  }
+  /** 从最新往回逐条取消息（每次只取 1 条，避免跳过复杂媒体对象） */
+  async recentMessages(inputPeer, count, minId) {
+    const out = [];
+    let offsetId = 0;
+    for (let i = 0; i < (count || 5); i++) {
+      const page = await this.historyPage(inputPeer, { limit: 1, minId: minId || 0, offsetId });
+      if (!page.length) break;
+      out.push(page[0]);
+      offsetId = page[0].id;
+      if (minId && page[0].id <= minId) break;
+    }
+    return out;
+  }
+  // 导出二维码登录 Token (auth.exportLoginToken#b7e085fe)
+  async exportLoginToken() {
+    const req = new TLWriter().writeUInt32(3084944894).writeInt32(this.apiId).writeString(this.apiHash).writeUInt32(481674261).writeInt32(0).toBytes();
+    let r = await this.invoke(req);
+    let ctor = r.readUInt32();
+    if (ctor === 110008598) {
+      const targetDc = r.readInt32();
+      const migToken = r.readBytes();
+      await this.switchDC(targetDc);
+      const impReq = new TLWriter().writeUInt32(2511101156).writeBytes(migToken).toBytes();
+      r = await this.invoke(impReq);
+      ctor = r.readUInt32();
+    }
+    if (ctor === 957176926) {
+      return { status: "success" };
+    }
+    if (ctor === 1654593920) {
+      const expires = r.readInt32();
+      const tokenBytes = r.readBytes();
+      return { status: "pending", expires, token: bytesToBase64Url(tokenBytes) };
+    }
+    throw new Error(`\u672A\u77E5\u626B\u7801\u72B6\u6001\u54CD\u5E94: 0x${ctor.toString(16)}`);
+  }
+  // 手机号发送验证码 (auth.sendCode#a677244f)
+  async sendPhoneCode(phone) {
+    const buildReq = () => new TLWriter().writeUInt32(2792825935).writeString(phone).writeInt32(this.apiId).writeString(this.apiHash).writeUInt32(2904898936).writeInt32(0).toBytes();
+    let r;
+    try {
+      r = await this.invoke(buildReq());
+    } catch (err) {
+      const m = (err.errorMessage || "").match(/PHONE_MIGRATE_(\d+)/);
+      if (m) {
+        await this.switchDC(Number(m[1]));
+        r = await this.invoke(buildReq());
+      } else {
+        throw err;
+      }
+    }
+    const ctor = r.readUInt32();
+    if (ctor !== 1577067778) throw new Error("\u53D1\u9001\u9A8C\u8BC1\u7801\u8FD4\u56DE\u672A\u77E5\u54CD\u5E94");
+    r.readInt32();
+    const typeCtor = r.readUInt32();
+    if (typeCtor === 3646315577) r.readString();
+    r.readInt32();
+    const phoneCodeHash = r.readString();
+    return phoneCodeHash;
+  }
+  // 手机号核验验证码 (auth.signIn#8d52a951)
+  async signInWithCode(phone, phoneCodeHash, code) {
+    const req = new TLWriter().writeUInt32(2371004753).writeInt32(1).writeString(phone).writeString(phoneCodeHash).writeString(code).toBytes();
+    await this.invoke(req);
+  }
+  // 两步验证 (2FA 云端密码) SRP 协议核验 (account.getPassword#548a30f5 + auth.checkPassword#d18b4d16)
+  async check2FAPassword(password) {
+    const r = await this.invoke(new TLWriter().writeUInt32(1418342645).toBytes());
+    const ctor = r.readUInt32();
+    if (ctor !== 2507886843) throw new Error("\u65E0\u6CD5\u8BFB\u53D6 2FA \u53C2\u6570");
+    const flags = r.readInt32();
+    if (!(flags & 4)) throw new Error("\u5F53\u524D\u8D26\u53F7\u672A\u5F00\u542F\u4E24\u6B65\u9A8C\u8BC1\u5BC6\u7801");
+    const algoCtor = r.readUInt32();
+    if (algoCtor !== 982592842) throw new Error("\u4E0D\u652F\u6301\u7684 KDF \u7B97\u6CD5");
+    const salt1 = r.readBytes();
+    const salt2 = r.readBytes();
+    const g = BigInt(r.readInt32());
+    const pBytes = r.readBytes();
+    const srpBBytes = r.readBytes();
+    const srpId = r.readInt64();
+    const p = bytesToBigIntBE(pBytes);
+    const B = bytesToBigIntBE(srpBBytes);
+    const sh = async (data, s) => sha256(concatBytes(s, data, s));
+    const passBytes = TEXT_ENC.encode(password);
+    const ph1 = await sh(await sh(passBytes, salt1), salt2);
+    const baseKey = await crypto.subtle.importKey("raw", ph1, "PBKDF2", false, ["deriveBits"]);
+    const derived = new Uint8Array(await crypto.subtle.deriveBits(
+      { name: "PBKDF2", hash: "SHA-512", salt: salt1, iterations: 1e5 },
+      baseKey,
+      512
+    ));
+    const ph2 = await sh(derived, salt2);
+    const x = bytesToBigIntBE(ph2);
+    const v = modPow(g, x, p);
+    const pPad = bigIntToBytesBE(p, 256);
+    const gPad = bigIntToBytesBE(g, 256);
+    const k = bytesToBigIntBE(await sha256(concatBytes(pPad, gPad)));
+    const kv = k * v % p;
+    const a = bytesToBigIntBE(randomBytes(256));
+    const ABytes = bigIntToBytesBE(modPow(g, a, p), 256);
+    const bPad = bigIntToBytesBE(B, 256);
+    const u = bytesToBigIntBE(await sha256(concatBytes(ABytes, bPad)));
+    let t = (B - kv) % p;
+    if (t < 0n) t += p;
+    const SBytes = bigIntToBytesBE(modPow(t, a + u * x, p), 256);
+    const KBytes = await sha256(SBytes);
+    const m1 = await sha256(concatBytes(
+      xorBytes(await sha256(pPad), await sha256(gPad)),
+      await sha256(salt1),
+      await sha256(salt2),
+      ABytes,
+      bPad,
+      KBytes
+    ));
+    const checkReq = new TLWriter().writeUInt32(3515567382).writeUInt32(3531600002).writeInt64(srpId).writeBytes(ABytes).writeBytes(m1).toBytes();
+    await this.invoke(checkReq);
+  }
+};
+
+// src/engine.js
+var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+var brief = (s, n = 200) => {
+  const t = String(s || "").replace(/\s+/g, " ").trim();
+  return t.length <= n ? t : t.slice(0, n - 1) + "\u2026";
+};
+var DEAD_SESSION = /AUTH_KEY_UNREGISTERED|USER_DEACTIVATED|SESSION_REVOKED|AUTH_KEY_DUPLICATED|USER_DEACTIVATED_BAN|SESSION_EXPIRED/i;
+function errText(e) {
+  const msg = String(e && (e.errorMessage || e.message) || e || "");
+  const code = /^([A-Z][A-Z0-9_]{3,})$/.exec(msg);
+  if (/FLOOD_WAIT/.test(msg) || /FLOOD/.test(String(e && e.code || ""))) {
+    const m = /FLOOD_WAIT_(\d+)/.exec(msg);
+    const sec = m && m[1] || "?";
+    return "\u89E6\u53D1\u9650\u6D41\uFF08FLOOD_WAIT_" + sec + "\uFF09\uFF0CTelegram \u8981\u6C42\u7B49\u5F85 " + sec + " \u79D2";
+  }
+  if (DEAD_SESSION.test(msg)) return "\u767B\u5F55\u5DF2\u5931\u6548\uFF0C\u8BF7\u5230\u9762\u677F\u91CD\u65B0\u767B\u5F55\u8D26\u53F7\uFF08" + msg + "\uFF09";
+  if (msg === "TIMEOUT") return "\u8BF7\u6C42\u8D85\u65F6\uFF08Telegram \u6CA1\u6709\u56DE\u5305\uFF09";
+  return brief(code ? msg : e && e.message || msg || "\u672A\u77E5\u9519\u8BEF");
+}
+function makeClient({ session, apiId, apiHash, proxy }) {
+  const env = { TG_API_ID: apiId, TG_API_HASH: apiHash };
+  if (proxy && proxy.host && proxy.port) {
+    env.S5_HOST = proxy.host;
+    env.S5_PORT = proxy.port;
+    env.S5_USER = proxy.user || "";
+    env.S5_PASS = proxy.pass || "";
+  }
+  return new MTProtoClient(session || "", env);
+}
+function taskContext(ms, name, onAbort, waiter) {
+  const wait = waiter || sleep;
+  const ctx = {
+    ms,
+    name,
+    aborted: false,
+    reason: "",
+    cancelled: false,
+    sendAttempted: false,
+    abort(reason, cancelled = false) {
+      if (this.aborted) return;
+      this.aborted = true;
+      this.reason = reason;
+      this.cancelled = cancelled;
+      try {
+        if (onAbort) onAbort(reason);
+      } catch (e) {
+      }
+    },
+    throwIfAborted() {
+      if (this.aborted) {
+        const e = new Error(this.reason || "ABORTED");
+        e.code = this.cancelled ? "CANCELLED" : "ABORTED";
+        throw e;
+      }
+    },
+    async sleep(ms2) {
+      const end = Date.now() + ms2;
+      while (Date.now() < end) {
+        this.throwIfAborted();
+        await wait(Math.min(250, end - Date.now()));
+      }
+      this.throwIfAborted();
+    },
+    async checkStop(shouldStop) {
+      if (shouldStop && await shouldStop()) this.abort("\u5DF2\u624B\u52A8\u7ED3\u675F\u8BE5\u6279\u6B21", true);
+      this.throwIfAborted();
+    }
+  };
+  return ctx;
+}
+async function withDeadline(p, ctx) {
+  let timer;
+  const timed = new Promise(function(_, reject) {
+    timer = setTimeout(function() {
+      ctx.abort(ctx.name + " \u6267\u884C\u8D85\u65F6\uFF08" + Math.round(ctx.ms / 1e3) + " \u79D2\u65E0\u7ED3\u679C\uFF09");
+      const e = new Error(ctx.reason);
+      e.code = "ABORTED";
+      reject(e);
+    }, ctx.ms);
+  });
+  try {
+    const value = await Promise.race([Promise.resolve(p), timed]);
+    ctx.throwIfAborted();
+    return value;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function withFlood(fn, ctx, tries = 3) {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = String(e && e.message || e);
+      const m = /FLOOD_WAIT_(\d+)/.exec(msg);
+      if (m && i < tries) {
+        const wait = Number(m[1]) || 3;
+        if (wait > 45) {
+          const err = new Error(msg);
+          err.code = "NO_RETRY";
+          throw err;
+        }
+        await ctx.sleep(wait * 1e3 + 1e3);
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+async function checkin(client, t, log, ctx) {
+  if (ctx.checkStop) await ctx.checkStop(ctx.shouldStop);
+  else ctx.throwIfAborted();
+  const peer = await withFlood(() => client.resolvePeer(t.target), ctx);
+  ctx.throwIfAborted();
+  const cmd = String(t.command || "/start").trim();
+  const t0 = Math.floor(Date.now() / 1e3);
+  const SKEW = 10;
+  const since = (m, t2) => (Number(m && m.date) || 0) >= t2 - SKEW;
+  ctx.sendAttempted = true;
+  const sent = await withFlood(() => client.sendText(peer.inputPeer, cmd), ctx);
+  log("\u5DF2\u53D1\u9001\uFF1A" + cmd);
+  let sentId = sent.msgId || 0;
+  if (!sentId) {
+    await ctx.sleep(900);
+    const last2 = await withFlood(() => client.historyPage(peer.inputPeer, { limit: 1 }), ctx);
+    if (last2.length && last2[0].out) sentId = last2[0].id;
+  }
+  const keyword = String(t.button || "").trim();
+  const success = String(t.successText || "").split("|").map((x) => x.trim()).filter(Boolean);
+  let popup = "";
+  let clicked = false;
+  let clickedAt = 0;
+  if (keyword) {
+    const end = Date.now() + 25e3;
+    let hit = null;
+    while (Date.now() < end) {
+      await ctx.sleep(0);
+      const msgs = await withFlood(() => client.recentMessages(peer.inputPeer, 6, sentId), ctx);
+      for (let i = 0; i < msgs.length; i++) {
+        const m = msgs[i];
+        if (m.out || !m.buttons) continue;
+        if (!since(m, t0)) continue;
+        for (let r = 0; r < m.buttons.length; r++) {
+          const row = m.buttons[r];
+          for (let b = 0; b < row.length; b++) {
+            const btn = row[b];
+            if (btn.url) continue;
+            if (String(btn.text || "").indexOf(keyword) >= 0) {
+              hit = { msg: m, btn };
+              break;
+            }
+          }
+          if (hit) break;
+        }
+        if (hit) break;
+      }
+      if (hit) break;
+      await ctx.sleep(1500);
+    }
+    if (!hit) return { ok: false, message: "25 \u79D2\u5185\u6CA1\u7B49\u5230\u5305\u542B\u300C" + keyword + "\u300D\u7684\u6309\u94AE" };
+    log("\u627E\u5230\u6309\u94AE\uFF1A" + hit.btn.text);
+    if (hit.btn.data && hit.btn.data.length) {
+      if (ctx.checkStop) await ctx.checkStop(ctx.shouldStop);
+      else ctx.throwIfAborted();
+      clickedAt = Math.floor(Date.now() / 1e3);
+      const res = await withFlood(() => client.clickButton(peer.inputPeer, hit.msg.id, hit.btn.data), ctx);
+      clicked = true;
+      popup = res.message || "";
+      log("\u5DF2\u70B9\u51FB" + (popup ? "\uFF0C\u5F39\u7A97\uFF1A" + popup : ""));
+    } else {
+      clicked = true;
+      log("\u6309\u94AE\u662F URL \u7C7B\u578B\uFF0C\u65E0\u9700\u70B9\u51FB");
+    }
+  }
+  const t1 = clickedAt || t0;
+  const ALREADY = /已经签|已签到|今日已签|已签|签过|重复签|已领取|领取过|已打卡|打卡过/;
+  const deadline = Date.now() + (success.length ? 15e3 : 1e4);
+  await ctx.sleep(2500);
+  let texts = [];
+  for (; ; ) {
+    const msgs = await withFlood(() => client.recentMessages(peer.inputPeer, 6, sentId), ctx);
+    texts = msgs.filter((m) => !m.out && m.text && since(m, t1)).map((m) => m.text);
+    const pool = [popup].concat(texts);
+    if (popup && ALREADY.test(popup)) {
+      log("\u5F39\u7A97\uFF1A" + brief(popup));
+      return { ok: true, message: brief(popup) };
+    }
+    const already = texts.find((x) => ALREADY.test(x));
+    if (already) {
+      log("\u673A\u5668\u4EBA\u56DE\u590D\uFF1A" + brief(already));
+      return { ok: true, message: brief(already) };
+    }
+    if (success.length) {
+      const hitText = pool.filter(Boolean).find((x) => success.some((s) => String(x).indexOf(s) >= 0));
+      if (hitText) {
+        log("\u673A\u5668\u4EBA\u56DE\u590D\uFF1A" + brief(hitText));
+        return { ok: true, message: brief(hitText) };
+      }
+    }
+    if (!success.length && texts.length) break;
+    if (Date.now() >= deadline) break;
+    await ctx.sleep(1500);
+  }
+  const last = texts[0] || popup;
+  if (last) log("\u673A\u5668\u4EBA\u56DE\u590D\uFF1A" + brief(last));
+  if (last && ALREADY.test(last)) return { ok: true, message: brief(last) };
+  if (clicked && !texts.length) {
+    return { ok: false, noRetry: true, message: "\u5DF2\u70B9\u51FB\u300C" + keyword + "\u300D\uFF0C\u4F46\u673A\u5668\u4EBA\u6CA1\u6709\u4EFB\u4F55\u65B0\u56DE\u590D" + (popup ? "\uFF08\u5F39\u7A97\uFF1A" + brief(popup) + "\uFF09" : "") + "\uFF0C\u65E0\u6CD5\u786E\u8BA4\u662F\u5426\u6210\u529F" };
+  }
+  if (success.length) return { ok: false, message: "\u6CA1\u770B\u5230\u6210\u529F\u5173\u952E\u8BCD\u3002\u673A\u5668\u4EBA\u6700\u65B0\u56DE\u590D\uFF1A" + brief(last || "\uFF08\u65E0\uFF09") };
+  if (keyword && !clicked) return { ok: false, message: "\u6CA1\u80FD\u70B9\u51FB\u6309\u94AE" };
+  if (!popup && !last) return { ok: false, noRetry: true, message: "\u547D\u4EE4\u5DF2\u53D1\u9001\uFF0C\u4F46\u673A\u5668\u4EBA\u4E00\u76F4\u6CA1\u6709\u56DE\u590D\uFF0C\u65E0\u6CD5\u786E\u8BA4\u662F\u5426\u6210\u529F" };
+  return { ok: true, message: brief(popup || last) };
+}
+async function runTasks(opts) {
+  const tasks = (opts.tasks || []).slice();
+  const log = opts.log || (() => {
+  });
+  const out = [];
+  const stamp = () => (/* @__PURE__ */ new Date()).toISOString().slice(11, 19);
+  if (!tasks.length) return { results: [], error: "" };
+  if (!opts.session) {
+    return {
+      results: tasks.map((t) => ({ id: t.id, name: t.name || t.id, ok: false, message: "\u8D26\u53F7\u6CA1\u6709 session\uFF0C\u8BF7\u5148\u5728\u9762\u677F\u767B\u5F55", lines: [] })),
+      error: "\u6CA1\u6709 session"
+    };
+  }
+  const mk = opts.makeClient || makeClient;
+  async function connect2() {
+    const c = mk(opts);
+    await c.connect();
+    return c;
+  }
+  let head = null;
+  try {
+    head = await connect2();
+    await head.getMe();
+  } catch (e) {
+    const m = errText(e);
+    try {
+      if (head) await head.disconnect();
+    } catch (err) {
+    }
+    return {
+      results: tasks.map((t) => ({ id: t.id, name: t.name || t.id, ok: false, message: "\u8FDE\u63A5 Telegram \u5931\u8D25\uFF1A" + m, lines: [] })),
+      error: "\u8FDE\u63A5 Telegram \u5931\u8D25\uFF1A" + m
+    };
+  }
+  const queue = tasks.slice();
+  const conc = Math.max(1, Math.min(Number(opts.concurrency) || 3, 4, queue.length));
+  async function worker(seed) {
+    let client = seed;
+    try {
+      while (queue.length) {
+        const t = queue.shift();
+        const lines = [];
+        if (opts.shouldStop && await opts.shouldStop()) {
+          const stopRec = { id: t.id, name: t.name || t.id, target: t.target || "", ok: false, message: "\u5DF2\u624B\u52A8\u7ED3\u675F\u8BE5\u6279\u6B21", cancelled: true, noRetry: true, lines: [] };
+          out.push(stopRec);
+          if (opts.onResult) {
+            try {
+              await opts.onResult(stopRec);
+            } catch (e) {
+            }
+          }
+          continue;
+        }
+        if (!client) {
+          try {
+            client = await connect2();
+          } catch (e) {
+            const rec2 = { id: t.id, name: t.name || t.id, target: t.target || "", ok: false, message: "\u8FDE\u63A5\u4E2D\u65AD\uFF1A" + errText(e), lines };
+            out.push(rec2);
+            if (opts.onResult) {
+              try {
+                await opts.onResult(rec2);
+              } catch (err) {
+              }
+            }
+            break;
+          }
+        }
+        let rec = null;
+        for (let attempt = 0; attempt < 2 && !rec; attempt++) {
+          if (!client) {
+            try {
+              client = await connect2();
+            } catch (e) {
+              rec = {
+                id: t.id,
+                name: t.name || t.id,
+                target: t.target || "",
+                ok: false,
+                noRetry: true,
+                message: "\u91CD\u8FDE Telegram \u5931\u8D25\uFF1A" + errText(e),
+                lines
+              };
+              break;
+            }
+          }
+          const ctx = taskContext(Number(opts.taskTimeoutMs) || 9e4, t.name || t.id, function() {
+            try {
+              if (client) client.disconnect();
+            } catch (e) {
+            }
+          }, opts.sleep);
+          ctx.shouldStop = opts.shouldStop;
+          try {
+            const r = await withDeadline(checkin(client, t, (s) => lines.push(stamp() + " " + s), ctx), ctx);
+            rec = { id: t.id, name: t.name || t.id, target: t.target || "", ok: !!r.ok, message: r.message, lines };
+          } catch (e) {
+            const em = errText(e);
+            try {
+              await client.disconnect();
+            } catch (err) {
+            }
+            client = null;
+            if (ctx.cancelled) {
+              rec = { id: t.id, name: t.name || t.id, target: t.target || "", ok: false, cancelled: true, noRetry: true, message: "\u5DF2\u624B\u52A8\u7ED3\u675F\u8BE5\u6279\u6B21", lines };
+            } else if (ctx.aborted) {
+              rec = {
+                id: t.id,
+                name: t.name || t.id,
+                target: t.target || "",
+                ok: false,
+                noRetry: ctx.sendAttempted,
+                lines,
+                message: ctx.reason + (ctx.sendAttempted ? "\uFF1B\u6D88\u606F\u5DF2\u53D1\u51FA\uFF0C\u7ED3\u679C\u672A\u77E5\uFF0C\u672A\u81EA\u52A8\u91CD\u8BD5" : "")
+              };
+            } else if (attempt === 0 && !ctx.sendAttempted && e.code !== "NO_RETRY" && /Socket|EOF|closed|ECONN|timeout|Not connected|FLOOD|限流/i.test(em)) {
+              lines.push(stamp() + " \u8FDE\u63A5\u5F02\u5E38\uFF08" + em + "\uFF09\uFF0C\u91CD\u8FDE\u91CD\u8BD5\u4E00\u6B21");
+              continue;
+            } else {
+              rec = {
+                id: t.id,
+                name: t.name || t.id,
+                target: t.target || "",
+                ok: false,
+                noRetry: ctx.sendAttempted || e.code === "NO_RETRY",
+                message: "\u6267\u884C\u5F02\u5E38\uFF1A" + em,
+                lines
+              };
+            }
+          }
+        }
+        lines.push((rec.ok ? "\u6210\u529F\uFF1A" : "\u5931\u8D25\uFF1A") + rec.message);
+        out.push(rec);
+        if (opts.onResult) {
+          try {
+            await opts.onResult(rec);
+          } catch (e) {
+          }
+        }
+        log((t.name || t.id) + " \u2192 " + (rec.ok ? "ok" : "fail"));
+        if (queue.length) await sleep(600 + Math.floor(Math.random() * 1200));
+      }
+    } finally {
+      try {
+        if (client) await client.disconnect();
+      } catch (e) {
+      }
+    }
+    while (queue.length) {
+      const t = queue.shift();
+      const rec = {
+        id: t.id,
+        name: t.name || t.id,
+        target: t.target || "",
+        ok: false,
+        noRetry: true,
+        message: "\u8FDE\u63A5\u4E2D\u65AD\uFF0C\u672A\u6536\u5230\u6267\u884C\u7ED3\u679C\uFF1B\u4E3A\u907F\u514D\u91CD\u590D\u7B7E\u5230\u672A\u81EA\u52A8\u91CD\u53D1",
+        lines: []
+      };
+      out.push(rec);
+      if (opts.onResult) {
+        try {
+          await opts.onResult(rec);
+        } catch (e) {
+        }
+      }
+    }
+  }
+  const pool = [];
+  for (let i = 0; i < conc; i++) pool.push(worker(i === 0 ? head : null));
+  await Promise.all(pool);
+  return { results: out, error: "" };
+}
+function parseProxyUrl(url) {
+  const s = String(url || "").trim();
+  if (!s) return null;
+  const m = /^(?:socks5h?):\/\/(?:([^:@/]*)(?::([^@/]*))?@)?([^:/]+):(\d+)\/?$/i.exec(s);
+  if (!m) {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return null;
+    const m2 = /^(?:([^:@/]*)(?::([^@/]*))?@)?([^:/]+):(\d+)$/.exec(s);
+    if (!m2) return null;
+    return { user: decodeURIComponent(m2[1] || ""), pass: decodeURIComponent(m2[2] || ""), host: m2[3], port: Number(m2[4]) };
+  }
+  return { user: decodeURIComponent(m[1] || ""), pass: decodeURIComponent(m[2] || ""), host: m[3], port: Number(m[4]) };
+}
+async function checkAccount(opts) {
+  const t0 = Date.now();
+  let client = null;
+  try {
+    client = makeClient(opts);
+    await client.connect();
+    const me = await client.getMe();
+    return {
+      ok: true,
+      ms: Date.now() - t0,
+      display: [me.firstName, me.lastName].filter(Boolean).join(" ") || String(me.username || ""),
+      user: { id: String(me.id), username: me.username || "", firstName: me.firstName || "", lastName: me.lastName || "", phone: me.phone || "" }
+    };
+  } catch (e) {
+    return { ok: false, ms: Date.now() - t0, error: errText(e) };
+  } finally {
+    try {
+      if (client) await client.disconnect();
+    } catch (e) {
+    }
+  }
+}
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  MTProtoClient,
+  TLReader,
+  TLWriter,
+  checkAccount,
+  parseProxyUrl,
+  runTasks
+});
+
+  return module.exports;
+})({ exports: {} });
+
+/* ================= TG bot 签到（MTProto，零依赖） ================= */
+const crypto = require('crypto');
+const TG_FILE = path.join(DATA_DIR, 'tg.json');
+const TG_DEF = {
+  settings: { enabled: true, start: '00:05', end: '00:40', apiId: '2040',
+    apiHash: 'b18441a1ff607e10a989891a5462e627', timeout: 90, retry: 2 },
+  accounts: [], tasks: [], plan: {}, logs: [], updatedAt: 0
+};
+let tg = loadJSON(TG_FILE, null);
+if (!tg || typeof tg !== 'object') tg = JSON.parse(JSON.stringify(TG_DEF));
+tg.settings = Object.assign({}, TG_DEF.settings, tg.settings || {});
+tg.accounts = Array.isArray(tg.accounts) ? tg.accounts : [];
+tg.tasks = Array.isArray(tg.tasks) ? tg.tasks : [];
+tg.logs = Array.isArray(tg.logs) ? tg.logs : [];
+tg.plan = tg.plan && typeof tg.plan === 'object' ? tg.plan : {};
+
+function tgPersist() {
+  tg.updatedAt = Date.now();
+  try { saveJSON(TG_FILE, tg); fs.chmodSync(TG_FILE, 0o600); } catch (e) {}
+}
+function tgId(p) { return (p || 'x') + '_' + crypto.randomBytes(5).toString('hex'); }
+function tgNowText(d) {
+  d = d || new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function tgDateKey(d) {
+  d = d || new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+function tgMin(hhmm) {
+  const m = String(hhmm || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return -1;
+  return Math.min(1439, Math.max(0, (+m[1]) * 60 + (+m[2])));
+}
+function tgMinText(m) {
+  const p = (n) => String(n).padStart(2, '0');
+  return p(Math.floor(m / 60) % 24) + ':' + p(m % 60);
+}
+function tgNormPhone(s) {
+  let v = String(s || '').trim().replace(/[\s\-()]/g, '');
+  if (!v) return '';
+  if (v[0] !== '+') v = '+' + v.replace(/^\+/, '');
+  return /^\+\d{6,16}$/.test(v) ? v : '';
+}
+/* session 加密：密钥由管理员密钥派生，可用 TG_ENC_KEY 固定 */
+function tgKeyList() {
+  const salt = 'vps-tg-session:v1:';
+  const out = [];
+  if (process.env.TG_ENC_KEY) out.push(crypto.createHash('sha256').update(salt + process.env.TG_ENC_KEY).digest());
+  out.push(crypto.createHash('sha256').update(salt + (config.adminToken || '')).digest());
+  out.push(crypto.createHash('sha256').update(salt + 'default').digest());
+  return out;
+}
+function tgSeal(str) {
+  if (!str) return '';
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', tgKeyList()[0], iv);
+  const ct = Buffer.concat([c.update(String(str), 'utf8'), c.final()]);
+  return 'v1.' + Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64');
+}
+function tgOpen(blob) {
+  if (!blob) return '';
+  const s = String(blob);
+  if (s.indexOf('v1.') !== 0) return s;
+  const raw = Buffer.from(s.slice(3), 'base64');
+  const iv = raw.subarray(0, 12), tag = raw.subarray(12, 28), ct = raw.subarray(28);
+  let last = null;
+  for (const key of tgKeyList()) {
+    try {
+      const d = crypto.createDecipheriv('aes-256-gcm', key, iv);
+      d.setAuthTag(tag);
+      return Buffer.concat([d.update(ct), d.final()]).toString('utf8');
+    } catch (e) { last = e; }
+  }
+  throw new Error('session 解密失败（管理员密钥被改过？可用 TG_ENC_KEY 固定，或重新登录）');
+}
+function tgProxyEnv(proxy) {
+  const env = {};
+  const s0 = String(proxy || '').trim().replace(/^socks5?:\/\//i, '');
+  if (!s0) return env;
+  let s = s0, user = '', pass = '';
+  const at = s.lastIndexOf('@');
+  if (at > 0) { const cred = s.slice(0, at); s = s.slice(at + 1); const i = cred.indexOf(':'); user = i < 0 ? cred : cred.slice(0, i); pass = i < 0 ? '' : cred.slice(i + 1); }
+  const i = s.lastIndexOf(':');
+  if (i < 0) return env;
+  env.S5_HOST = s.slice(0, i);
+  env.S5_PORT = s.slice(i + 1) || '1080';
+  env.S5_USER = user;
+  env.S5_PASS = pass;
+  return env;
+}
+function tgEnvOf(acc) {
+  return Object.assign({
+    TG_API_ID: String(acc.apiId || tg.settings.apiId || '2040'),
+    TG_API_HASH: String(acc.apiHash || tg.settings.apiHash || '')
+  }, tgProxyEnv(acc.proxy));
+}
+
+/* ---------- 登录（手机号）与账号 ---------- */
+const tgRunning = Object.create(null);
+const tgQueued = Object.create(null);
+let tgPending = Object.create(null);
+function tgPendingClean() {
+  const now = Date.now();
+  for (const k of Object.keys(tgPending)) {
+    if (now - tgPending[k].at > 10 * 60 * 1000) {
+      try { tgPending[k].client.disconnect(); } catch (e) {}
+      delete tgPending[k];
+    }
+  }
+}
+function tgErrText(e) {
+  const m = String((e && e.message) || e || '').trim();
+  if (/ENOTFOUND|EAI_AGAIN/.test(m)) return '域名解析失败（检查代理 / DNS）';
+  if (/ECONNREFUSED/.test(m)) return '连接被拒绝（检查代理端口）';
+  if (/ETIMEDOUT|timed? ?out/i.test(m)) return '连接超时（Telegram 可能被墙，建议填代理）';
+  if (/AUTH_KEY|SESSION_REVOKED|USER_DEACTIVATED/.test(m)) return 'session 已失效，请重新登录';
+  if (/FLOOD_WAIT_(\d+)/.test(m)) return '请求太频繁，等 ' + Math.round(+m.match(/FLOOD_WAIT_(\d+)/)[1] / 60) + ' 分钟再试';
+  if (/PHONE_NUMBER_INVALID/.test(m)) return '手机号格式不对（要带国家码）';
+  if (/PHONE_CODE_INVALID/.test(m)) return '验证码不对';
+  if (/PHONE_CODE_EXPIRED/.test(m)) return '验证码已过期，重新发送';
+  if (/PASSWORD_HASH_INVALID/.test(m)) return '两步验证密码不对';
+  if (/API_ID|API_HASH/.test(m)) return 'api_id / api_hash 不对（内置的是公开客户端参数，一般不用改）';
+  return m || '未知错误';
+}
+function tgPublicAcc(a) {
+  const me = String(a.session || '').length > 0;
+  return {
+    id: a.id, name: a.name || a.phone || '未命名', phone: a.phone || '',
+    proxy: a.proxy ? a.proxy.replace(/:[^:@]*@/, ':***@') : '',
+    hasSession: me, enabled: a.enabled !== false,
+    lastRun: a.lastRun || '', lastOk: a.lastOk === undefined ? null : a.lastOk,
+    lastMsg: a.lastMsg || '', running: !!(tgRunning[a.id] || tgQueued[a.id])
+  };
+}
+function tgPublicTask(t) {
+  return {
+    id: t.id, name: t.name || t.target, accountId: t.accountId, target: t.target,
+    command: t.command, enabled: t.enabled !== false,
+    lastTs: t.lastTs || 0, lastOk: t.lastOk === undefined ? null : t.lastOk,
+    lastMsg: t.lastMsg || '', doneOn: t.doneOn || '', attempts: t.attemptsCount || 0
+  };
+}
+async function tgLoginStart(b) {
+  tgPendingClean();
+  const phone = tgNormPhone(b.phone);
+  if (!phone) throw new Error('手机号要带国家码，例如 +8613800138000');
+  const env = Object.assign({
+    TG_API_ID: String(b.apiId || tg.settings.apiId || '2040'),
+    TG_API_HASH: String(b.apiHash || tg.settings.apiHash || '')
+  }, tgProxyEnv(b.proxy));
+  if (!env.TG_API_HASH) throw new Error('缺少 api_hash');
+  const client = new TGKIT.MTProtoClient('', env);
+  await client.connect();
+  let hash = '';
+  try {
+    hash = await client.sendPhoneCode(phone);
+  } catch (e) {
+    try { await client.disconnect(); } catch (e2) {}
+    throw new Error(tgErrText(e));
+  }
+  const loginId = tgId('lg');
+  tgPending[loginId] = {
+    client, phone, apiId: env.TG_API_ID, apiHash: env.TG_API_HASH,
+    proxy: String(b.proxy || '').trim(), hash, name: String(b.name || '').trim(), at: Date.now()
+  };
+  return { loginId, phone };
+}
+async function tgLoginCode(loginId, code) {
+  const p = tgPending[loginId];
+  if (!p) throw new Error('登录已超时，请重新发送验证码');
+  p.at = Date.now();
+  try {
+    await p.client.signInWithCode(p.phone, p.hash, String(code || '').replace(/\s/g, ''));
+  } catch (e) {
+    const m = String((e && e.message) || e);
+    if (/SESSION_PASSWORD_NEEDED|SESSION_PASSWORD/.test(m)) { p.needPw = true; return { needPassword: true }; }
+    throw new Error(tgErrText(e));
+  }
+  return tgLoginFinish(p);
+}
+async function tgLoginPassword(loginId, password) {
+  const p = tgPending[loginId];
+  if (!p) throw new Error('登录已超时，请重新走一遍');
+  p.at = Date.now();
+  try {
+    await p.client.check2FAPassword(String(password || ''));
+  } catch (e) {
+    throw new Error(tgErrText(e));
+  }
+  return tgLoginFinish(p);
+}
+async function tgLoginFinish(p) {
+  let me = null;
+  try { me = await p.client.getMe(); } catch (e) {}
+  const session = p.client.saveSession();
+  try { await p.client.disconnect(); } catch (e) {}
+  const id = p.client && p.client.id;
+  const acc = {
+    id: tgId('acc'), name: p.name || (me && (me.firstName || me.username)) || p.phone,
+    phone: p.phone, apiId: p.apiId, apiHash: p.apiHash, proxy: p.proxy,
+    session: tgSeal(session), enabled: true, addedAt: Date.now(),
+    lastRun: '', lastOk: null, lastMsg: me ? ('已登录：' + (me.firstName || me.username || me.id)) : '已登录'
+  };
+  tg.accounts.push(acc);
+  tgPersist();
+  for (const k of Object.keys(tgPending)) if (tgPending[k].client === p.client) delete tgPending[k];
+  return tgPublicAcc(acc);
+}
+async function tgImportSession(b) {
+  const session = String(b.session || '').trim();
+  if (!session) throw new Error('请把 session 字符串贴进来');
+  const env = Object.assign({
+    TG_API_ID: String(b.apiId || tg.settings.apiId || '2040'),
+    TG_API_HASH: String(b.apiHash || tg.settings.apiHash || '')
+  }, tgProxyEnv(b.proxy));
+  const client = new TGKIT.MTProtoClient(session, env);
+  await client.connect();
+  let me;
+  try { me = await client.getMe(); }
+  catch (e) { try { await client.disconnect(); } catch (e2) {} throw new Error(tgErrText(e)); }
+  const acc = {
+    id: tgId('acc'), name: String(b.name || '').trim() || (me && (me.firstName || me.username)) || '导入账号',
+    phone: String(b.phone || '').trim(), apiId: env.TG_API_ID, apiHash: env.TG_API_HASH,
+    proxy: String(b.proxy || '').trim(), session: tgSeal(client.saveSession()),
+    enabled: true, addedAt: Date.now(), lastRun: '',
+    lastOk: null, lastMsg: '已登录：' + ((me && (me.firstName || me.username)) || '')
+  };
+  try { await client.disconnect(); } catch (e) {}
+  tg.accounts.push(acc);
+  tgPersist();
+  return tgPublicAcc(acc);
+}
+async function tgCheckAccount(acc) {
+  const client = new TGKIT.MTProtoClient(tgOpen(acc.session), tgEnvOf(acc));
+  try {
+    await client.connect();
+    const me = await client.getMe();
+    acc.lastMsg = '正常：' + ((me && (me.firstName || me.username)) || '') + (me && me.phone ? ' ' + me.phone : '');
+    acc.lastOk = true;
+    return acc.lastMsg;
+  } finally {
+    try { await client.disconnect(); } catch (e) {}
+    tgPersist();
+  }
+}
+
+/* ---------- 执行 ---------- */
+function tgDateKey(d) {
+  d = d || new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function tgMinuteOf(s) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim());
+  if (!m) return -1;
+  return Math.min(1439, Math.max(0, (+m[1]) * 60 + (+m[2])));
+}
+function tgNowMin() {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
+function tgPlanTime(seed) {
+  const a = tgMinuteOf(tg.settings.start), b = tgMinuteOf(tg.settings.end);
+  const lo = a < 0 ? 0 : a, hi = b <= lo ? lo + 60 : b;
+  const h = crypto.createHash('sha256').update('tg|' + tgDateKey() + '|' + seed).digest();
+  const span = Math.max(1, hi - lo);
+  const mins = lo + (h.readUInt32BE(0) % span);
+  return String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
+}
+function tgLog(rec) {
+  tg.logs.unshift(Object.assign({ ts: Date.now() }, rec));
+  if (tg.logs.length > 300) tg.logs.length = 300;
+}
+async function tgExecAccount(acc, list, reason) {
+  const t0 = Date.now();
+  let out;
+  try {
+    out = await TGKIT.runTasks({
+      session: tgOpen(acc.session),
+      apiId: acc.apiId || tg.settings.apiId,
+      apiHash: acc.apiHash || tg.settings.apiHash,
+      proxy: acc.proxy || '',
+      tasks: list.map(t => ({ id: t.id, name: t.name, target: t.target, command: t.command })),
+      concurrency: 1,
+      taskTimeoutMs: Math.max(20, +tg.settings.timeout || 90) * 1000,
+      log: function () {}
+    });
+  } catch (e) {
+    out = { results: list.map(t => ({ id: t.id, ok: false, message: tgErrText(e) })), error: tgErrText(e) };
+  }
+  const res = (out && out.results) || [];
+  let okN = 0, failN = 0;
+  for (const t of list) {
+    const r = res.find(x => x && x.id === t.id) || { ok: false, message: (out && out.error) || '没有拿到结果' };
+    t.lastTs = Date.now();
+    t.lastOk = !!r.ok;
+    t.lastMsg = String(r.message || (r.ok ? '完成' : '失败')).slice(0, 200);
+    if (t.lastOk) { okN++; t.doneOn = tgDateKey(); }
+    else {
+      failN++;
+      const _today = tgDateKey();
+      if (t.attemptsDate !== _today) { t.attemptsDate = _today; t.attemptsCount = 0; }
+      t.attemptsCount = (t.attemptsCount || 0) + 1;
+      t.lastAttempt = Date.now();
+    }
+    tgLog({ kind: 'task', taskId: t.id, name: t.name || t.target, ok: t.lastOk, msg: t.lastMsg, ms: Date.now() - t0, reason: reason || '' });
+  }
+  acc.lastRun = new Date().toLocaleString('zh-CN', { hour12: false });
+  acc.lastOk = failN === 0;
+  acc.lastMsg = (okN + ' 成功' + (failN ? ' / ' + failN + ' 失败' : '') + ' · ' + (reason || ''));
+  tgLog({ kind: 'run', name: acc.name || acc.phone, ok: failN === 0, msg: '本次 ' + list.length + ' 个签到：成功 ' + okN + '，失败 ' + failN, ms: Date.now() - t0, reason: reason || '' });
+  tgPersist();
+  return { ok: failN === 0, okN, failN, results: res };
+}
+function tgEnqueue(acc, list, reason) {
+  if (!acc || !list.length) return false;
+  if (!acc.session) return false;
+  if (tgRunning[acc.id]) return false;
+  tgQueued[acc.id] = true;
+  tgChain = tgChain.then(async () => {
+    delete tgQueued[acc.id];
+    if (tgRunning[acc.id]) return;
+    tgRunning[acc.id] = true;
+    try { await tgExecAccount(acc, list, reason); }
+    catch (e) { tgLog({ kind: 'run', name: acc.name || acc.phone, ok: false, msg: tgErrText(e), reason: reason || '' }); tgPersist(); }
+    finally { delete tgRunning[acc.id]; }
+  }).catch(() => {});
+  return true;
+}
+let tgTimer = null;
+let tgChain = Promise.resolve();
+let tgChainBusy = false;
+async function tgTick() {
+  if (!tg.settings.enabled) return;
+  const date = tgDateKey();
+  for (const k of Object.keys(tg.plan)) if (k !== date) delete tg.plan[k];
+  const day = tg.plan[date] || (tg.plan[date] = {});
+  const nowMin = tgNowMin();
+  const groups = Object.create(null);
+  for (const t of tg.tasks) {
+    if (t.enabled === false) continue;
+    if (t.doneOn === date) continue;
+    const acc = tg.accounts.find(a => a.id === t.accountId);
+    if (!acc || !acc.session || acc.enabled === false) continue;
+    if (tgRunning[acc.id] || tgQueued[acc.id]) continue;
+    if (t.attemptsDate === date && (t.attemptsCount || 0) >= (+tg.settings.retry || 2)) continue;
+    if (t.lastAttempt && Date.now() - t.lastAttempt < 20 * 60 * 1000) continue;
+    if (!day[t.id]) { day[t.id] = tgPlanTime(t.id); tgPersist(); }
+    if (nowMin < tgMinuteOf(day[t.id])) continue;
+    (groups[acc.id] = groups[acc.id] || []).push(t);
+  }
+  for (const accId of Object.keys(groups)) {
+    const acc = tg.accounts.find(a => a.id === accId);
+    if (acc) tgEnqueue(acc, groups[accId], '计划任务');
+  }
+}
+function startTgScheduler() {
+  if (tgTimer) return;
+  tgTimer = setInterval(function () { tgTick().catch(function () {}); }, 60 * 1000);
+  setTimeout(function () { tgTick().catch(function () {}); }, 8000);
+  try { tgTimer.unref && tgTimer.unref(); } catch (e) {}
+}
+function tgState() {
+  return {
+    success: true,
+    settings: tg.settings,
+    accounts: tg.accounts.map(tgPublicAcc),
+    tasks: tg.tasks.map(tgPublicTask),
+    logs: tg.logs.slice(0, 60),
+    running: Object.keys(tgRunning).concat(Object.keys(tgQueued)).filter(function (v, i, a) { return a.indexOf(v) === i; }),
+    plan: tg.plan[tgDateKey()] || {}
+  };
+}
+
+
+async function tgLoginCancel(loginId) {
+  const p = tgPending[loginId];
+  if (p) { delete tgPending[loginId]; try { p.client.disconnect(); } catch (e) {} }
+}
+async function tgApi(req, res, url, role) {
+  if (role !== 'admin') return sendJSON(res, 403, { success: false, error: '只有管理员可以管理签到' });
+  const p = url.pathname;
+  const B = async function () { try { return JSON.parse((await readBody(req)) || '{}'); } catch (e) { return {}; } };
+  try {
+    if (p === '/api/tg' && req.method === 'GET') return sendJSON(res, 200, tgState());
+    if (p === '/api/tg/settings' && req.method === 'POST') {
+      const b = await B(), s = tg.settings;
+      if (b.enabled !== undefined) s.enabled = !!b.enabled;
+      if (b.start !== undefined && /^\d{1,2}:\d{2}$/.test(String(b.start))) s.start = String(b.start);
+      if (b.end !== undefined && /^\d{1,2}:\d{2}$/.test(String(b.end))) s.end = String(b.end);
+      if (b.timeout !== undefined) s.timeout = Math.min(600, Math.max(30, parseInt(b.timeout, 10) || 90));
+      if (b.retry !== undefined) s.retry = Math.min(5, Math.max(0, parseInt(b.retry, 10) || 0));
+      if (b.apiId !== undefined) s.apiId = String(b.apiId || '2040').trim();
+      if (b.apiHash !== undefined && String(b.apiHash).trim()) s.apiHash = String(b.apiHash).trim();
+      tg.plan = {};
+      tgPersist();
+      tgTick().catch(function () {});
+      return sendJSON(res, 200, { success: true, settings: s });
+    }
+    if (p === '/api/tg/login/start' && req.method === 'POST') return sendJSON(res, 200, await tgLoginStart(await B()));
+    {
+      const b = await B();
+      if (p === '/api/tg/login/code' && req.method === 'POST') return sendJSON(res, 200, await tgLoginCode(b.loginId, b.code));
+      if (p === '/api/tg/login/password' && req.method === 'POST') return sendJSON(res, 200, { success: true, account: await tgLoginPassword(b.loginId, b.password) });
+      if (p === '/api/tg/login/cancel' && req.method === 'POST') { await tgLoginCancel(b.loginId); return sendJSON(res, 200, { success: true }); }
+      if (p === '/api/tg/account' && req.method === 'POST') return sendJSON(res, 200, { success: true, account: await tgImportSession(b) });
+      if (p === '/api/tg/account/delete' && req.method === 'POST') return sendJSON(res, 200, await tgAccDelete(b));
+      if (p === '/api/tg/account/check' && req.method === 'POST') return sendJSON(res, 200, await tgAccCheck(b));
+      if (p === '/api/tg/task' && req.method === 'POST') return sendJSON(res, 200, await tgTaskSave(b));
+      if (p === '/api/tg/task/delete' && req.method === 'POST') return sendJSON(res, 200, await tgTaskDelete(b));
+      if (p === '/api/tg/run' && req.method === 'POST') return sendJSON(res, 200, await tgRun(b));
+      if ((p === '/api/tg/logs/clear' || p === '/api/tg/clear-logs') && req.method === 'POST') {
+        tg.logs = [];
+        tgPersist();
+        return sendJSON(res, 200, { success: true });
+      }
+    }
+    return sendJSON(res, 404, { success: false, error: '接口不存在' });
+  } catch (e) {
+    return sendJSON(res, 400, { success: false, error: tgErrText(e) });
+  }
+}
+function startTgScheduler() {
+  if (tgTimer) return;
+  tgTimer = setInterval(function () { tgTick().catch(function () {}); }, 60000);
+}async function tgAccDelete(b) {
+  const i = tg.accounts.findIndex(a => a.id === b.id);
+  if (i < 0) throw new Error('账号不存在');
+  tg.accounts.splice(i, 1);
+  tg.tasks = tg.tasks.filter(t => t.accountId !== b.id);
+  tgPersist();
+  return { deleted: b.id };
+}
+
+async function tgAccCheck(b) {
+  const acc = tg.accounts.find(a => a.id === b.id);
+  if (!acc) throw new Error('账号不存在');
+  const me = await tgCheckAccount(acc);
+  acc.lastRun = tgNowText();
+  acc.lastOk = true;
+  acc.lastMsg = '账号正常：' + (me.name || me.username || me.id);
+  tgPersist();
+  return { ok: true, me: { name: me.name, username: me.username, id: me.id } };
+}
+async function tgTaskSave(b) {
+  if (!b.name || !b.accountId) throw new Error('任务名或账号不能为空');
+  const acc = tg.accounts.find(a => a.id === b.accountId);
+  if (!acc) throw new Error('所选账号不存在');
+  let t = tg.tasks.find(x => x.id === b.id);
+  const upd = {
+    name: String(b.name).trim(),
+    accountId: b.accountId,
+    target: String(b.target || '').trim(),
+    command: String(b.command || '/checkin').trim() || '/checkin',
+    enabled: b.enabled !== false
+  };
+  if (t) Object.assign(t, upd);
+  else tg.tasks.push(Object.assign({ id: tgId('k'), doneOn: '', lastOk: null, lastMsg: '' }, upd));
+  tgPersist();
+  return { task: tgPublicTask(t || tg.tasks[tg.tasks.length - 1]) };
+}async function tgTaskDelete(b) {
+  tg.tasks = tg.tasks.filter(t => t.id !== b.id);
+  tgPersist();
+  return { deleted: b.id };
+}async function tgRun(b) {
+  let list;
+  if (b && b.id) {
+    const t = tg.tasks.find(x => x.id === b.id);
+    if (!t) throw new Error('任务不存在');
+    list = [t];
+  } else if (b && b.accountId) {
+    list = tg.tasks.filter(t => t.accountId === b.accountId && t.enabled !== false);
+  } else {
+    list = tg.tasks.filter(t => t.enabled !== false);
+  }
+  if (!list.length) throw new Error('没有可执行的任务');
+  const accs = {};
+  for (const t of list) {
+    const acc = tg.accounts.find(a => a.id === t.accountId);
+    if (acc && acc.session) (accs[acc.id] = accs[acc.id] || []).push(t);
+  }
+  let n = 0;
+  for (const accId of Object.keys(accs)) {
+    const acc = tg.accounts.find(a => a.id === accId);
+    tgEnqueue(acc, accs[accId], b && b.id ? '手动执行' : '全部执行');
+    n += accs[accId].length;
+  }
+  return { queued: n };
+}
 // 不指定 host：监听系统全部地址（IPv6 双栈，IPv4 自动映射），纯 IPv4 / 纯 IPv6 / 双栈机器均可访问
 server.listen(PORT, () => {
+  startTgScheduler();
   console.log(`Emby 反代管理面板已启动: http://0.0.0.0:${PORT} （IPv4 + IPv6）`);
   console.log(`管理员密钥: ${config.adminToken}`);
   console.log(`节点数: ${routes.length}`);
