@@ -9,7 +9,8 @@
 - **播放统计图**：Chart.js 图表 —— 过去 7 天播放趋势折线 + 今日各节点播放柱状图
 - **IP 访问控制**：全局白/黑名单、IP/CIDR 网段、国家码整体封锁；被拦可 302 跳转或显示禁用页；`/entry` 逃生入口 + 最高白名单兜底
 - **TG bot 签到（v2.0.0 新增）**：面板内置 Telegram 签到——手机号 / session 登录后给机器人发命令（如 /checkin），每天时间窗内自动执行；自研 MTProto 客户端直连 Telegram，零第三方依赖
-- **部署**：单文件 `server.js` + 单文件 `panel.html`，零依赖，systemd 常驻
+- **TG Persona 自动化（v2.1.0 新增）**：在签到账号之上叠加自动化——关键词自动回复 / 点表情、群保号定时发言（可自动删除）、签到（点按钮 / 连点 / 成功失败判定 / 积分提取）、抢注监控、抢红包、自定义多步任务（含验证码识别）、自动水群、通知推送（Bark / TG Bot）、会话守护，全部面板可视化配置
+- **部署**：单文件 `server.js` + 单文件 `panel.html`（+ 可选 `tg-persona.js` 自动化模块），零依赖，systemd 常驻
 
 ---
 
@@ -36,6 +37,7 @@
 | 管理功能 | 节点增删改、多线路动态添加、订阅者管理、导入导出备份、缓存清理 |
 | 反代 Token 门禁 | 账户弹窗可开启并设置字母数字密钥；开启后所有节点/302/改写链接需带 `/密钥/` 前缀才可反代，不带前缀的访问 302 跳转 `/catch` 展示"宝贝抓到你了"+ 来访 IP/UA，并记录到本地（面板内可查、可清空）；关闭立即恢复 |
 | IP 访问控制 | 账户弹窗可设置白名单/黑名单、IP/CIDR 网段、国家码、跳转网址；面板与节点链接统一拦截，被拦可 302 跳转或显示禁用页；`/entry` 逃生入口只认管理员密钥，登录 IP 自动进最高白名单（黑/白模式均例外），最高白名单可增删；无 cookie 逃生 |
+| TG Persona（v2.1.0） | 关键词自动回复/点表情（多规则同时命中）、群保号定时发言+自动删除、签到（窗口随机时刻、按钮文本/表情定位、连点 1-N 次、成功/失败关键词判定、积分正则提取、失败重试、结果发群）、抢注（监听+轮询双模式、{code} 提取）、抢红包（按钮自动点击）、自定义多步 JSON 任务（send/wait/click/captcha/awaitReply，OpenAI 兼容视觉 API 验证码识别）、自动水群（窗口同句 N 条跟发）、通知推送（Bark/TG Bot，成功失败分开关）、时区、拟人化延迟+同群冷却、会话掉线守护、日志分类筛选 |
 
 ---
 
@@ -62,10 +64,14 @@
 emby-proxy/
 ├── server.js          # 主程序（零依赖，仅用 Node 原生模块）
 ├── panel.html         # 管理面板前端（iOS 风格）
+├── tg-persona.js      # （可选）TG Persona 自动化模块，缺省不影响面板其余功能
+├── install.sh         # 一键安装 / 升级 / 卸载脚本
 ├── data/
 │   ├── config.json    # 管理员密钥 / 网页密码 / 订阅者 / 前后端域名 / 网络优先 / ipguard 访问控制
 │   ├── routes.json    # 反代节点路由表
-│   └── stats.json     # 播放统计
+│   ├── stats.json     # 播放统计
+│   ├── tg.json        # TG 签到账号 / 任务 / 日志（session 加密存储，600 权限）
+│   └── persona.json   # TG Persona 规则 / 保号 / 任务 / 日志（600 权限）
 └── test-upstream.js   # （可选）本地模拟 Emby 源站，用于自测
 ```
 
@@ -270,6 +276,65 @@ cd /opt/emby-proxy && nohup node server.js > /tmp/emby-proxy.log 2>&1 &
 - **统计**：按节点查看每日播放点火次数与独立 IP 数；图表区展示**过去 7 天播放趋势折线图**与**今日各节点播放柱状图**（Chart.js，CDN 不可用时自动降级为纯数字）。
 - **深色模式**：顶栏太阳/月亮按钮切换，自动记忆。
 - **账户**：顶栏头像或账户按钮打开账户弹窗，可修改网页登录密码、查看角色、退出登录。
+
+---
+
+## TG Persona 自动化（v2.1.0 新增）
+
+> 需要先部署 `tg-persona.js`（一键脚本会自动拉取；手动升级请与 server.js 一起覆盖）。数据独立存于 `data/persona.json`（600 权限），账号复用 TG 签到的账号体系（`data/tg.json`）。
+
+### 开始使用
+
+1. 在 **TG 签到** 卡片里用手机号登录或导入 session（已有的可直接用）。
+2. 打开 **TG Persona** 卡片，在顶部下拉框选择**工作账号**（Persona 所有操作都走这个账号）。
+3. 添加**监听群**：填群 `@username` 点添加（复用内核解析，支持群组/频道/用户会话）。
+4. 按需配置**规则 / 保号 / 自动化任务**，保存即可自动运行（后台每 2-60 秒轮询一次，可配）。
+
+### 功能说明
+
+- **关键词规则**：命中群消息关键词（逗号分隔多词任意命中，可开正则）→ 随机延迟后 **回复文本**（`||` 分隔随机）/ **点表情** / 两者都做；可限定生效群；同群同规则冷却（默认 20 秒）；多条规则可同时命中。
+- **保号**：到点给目标群发内容（`||` 随机，支持 `{num:N}` `{word:N}` `{alpha:N}` `{uuid}` `{time}` `{date}` 占位符），可设定**发送后 N 秒自动删除**；时间窗随机时刻或固定间隔两种模式；支持立即执行。
+- **签到任务**（增强版）：时间窗随机时刻发命令 → 读机器人回复 → **成功/失败关键词判定** → **按按钮文字或表情定位按钮并点击**（可连点 1-N 次）→ **积分正则提取** → 失败可整链重试 → 结果可发到指定群 + 通知。
+- **抢注任务**：监听群消息命中开注关键词 → 自动回复 / 群发注册文本（`{code}` 占位符自动提取验证码/邀请码）；可选**轮询模式**（定时给机器人发探测命令，命中后注册）。
+- **抢红包**：监听带按钮消息，按钮文本/表情命中（默认 🧧）自动点击。
+- **自定义任务**：JSON 步骤流：`send` 发文本 / `wait` 等待 / `click` 点按钮 / `captcha` 验证码识别（需在设置配置 **OpenAI 兼容视觉 API** base/key/model，或改用手动步骤）/ `awaitReply` 等回复；失败整链重试 N 次。
+- **自动水群**：窗口内（默认 5 分钟）同一句话出现 N 条（默认 5）→ 随机跟发一条（`/` 开头的命令不跟）。
+- **通知**：Bark Key 或 TG Bot（`聊天ID:BotToken`），成功/失败推送可分别开关。
+- **会话守护**：每分钟检测工作账号在线，掉线推送一次通知，恢复自动复位并记日志。
+- **拟人化**：随机延迟（默认 1-3 秒）、同群同规则冷却、不处理自己发出的消息（内核解析不返回发送者，机器人消息暂无法单独区分）。
+
+### 已知限制（移植说明）
+
+- TG-Persona 原版（Python/Telethon）的"监听推送"改为**轮询最近消息**（每 2-60 秒，可配），适合低频群。
+- 回复为**群内直发**（未做消息引用/Reply），行为与原版"回复"语义略有差异。
+- 验证码识别仅支持 **OpenAI 兼容视觉 API**（原版 ddddocr 本地识别无法在零依赖 Node 下移植）。
+- 群自动发现（getDialogs）未移植：请用 `@群username` 手动添加；数字 ID 暂不支持。
+- 全部接口仅管理员可用（`/api/tg-persona/*`），未登录 / 订阅者返回 403。
+
+### API 速查（TG Persona，全部 POST 为主，均需管理员）
+
+```
+GET  /api/tg-persona/state                  总览（设置/统计/群列表）
+POST /api/tg-persona/enable     {"enabled":bool}        全局开关
+POST /api/tg-persona/settings   {tz,watcherSec,delayMin,delayMax,coolSec,sessionGuard,water,notify,ocr}
+POST /api/tg-persona/account    {"accountId":"..."}     选择工作账号
+POST /api/tg-persona/chats      {"ref":"@群username","monitored":true}    添加群
+POST /api/tg-persona/chats/monitor {"id","on"}          开关监听
+DELETE /api/tg-persona/chats    {"id"}                  移除群
+POST /api/tg-persona/rules      {name,keywords,regex,action,replies,emoji,chats}   新增规则
+PUT  /api/tg-persona/rules      {id,...}                更新规则
+DELETE /api/tg-persona/rules    {"id"}                  删除规则
+POST /api/tg-persona/keepalive  {name,chats,content,windowStart,windowEnd,intervalMin,deleteAfterSec}  新增保号
+PUT  /api/tg-persona/keepalive  {id,...}                更新保号
+DELETE /api/tg-persona/keepalive {"id"}                 删除保号
+POST /api/tg-persona/keepalive/run {"id"}               立即执行保号
+POST /api/tg-persona/tasks      {kind:"signin"|"grab"|"redpack"|"custom",...}   新增任务
+PUT  /api/tg-persona/tasks      {id,...}                更新任务
+DELETE /api/tg-persona/tasks    {"id"}                  删除任务
+POST /api/tg-persona/tasks/run  {"id"}                  立即执行任务
+GET  /api/tg-persona/logs       ?type=&q=&limit=        日志（筛选/搜索）
+POST /api/tg-persona/logs/clear {mode:"all"}            清空日志
+```
 
 ---
 

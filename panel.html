@@ -342,6 +342,103 @@
   </form>
   <div class="secthead">日志 <button class="btn-ghost" style="float:right" onclick="tgClearLogs()">清空</button></div>
   <div id="tgLogs"></div>
+</div>
+<div class="card" id="personaCard" style="display:none">
+  <h2><svg style="width:18px;height:18px;vertical-align:-3px;margin-right:6px" viewBox="0 0 24 24" fill="#ff9a3d"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>TG Persona（自动化）</h2>
+  <div class="muted">在 TG 签到已登录的账号上运行：关键词自动回复 / 点表情、群保号定时发言（可自动删除）、签到（点按钮/连点/判定）、抢注监控、抢红包、自定义多步任务、自动水群、通知推送、会话守护。数据存 data/persona.json（600）。</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
+    <label style="font-size:13px;color:var(--text-sec);display:flex;align-items:center;gap:4px"><input type="checkbox" id="paOn" style="width:16px;height:16px" onchange="paSetEnabled(this.checked)"> 启用 Persona</label>
+    <select id="paAccount" style="padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px" onchange="paSetAccount()"></select>
+    <button class="btn-ghost" onclick="paRefresh()">刷新</button>
+    <span class="muted" id="paStats" style="font-size:12px"></span>
+  </div>
+
+  <details style="margin:8px 0 4px">
+    <summary class="secthead" style="cursor:pointer">设置</summary>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+      <input id="paTz" placeholder="时区(默认 Asia/Shanghai)" style="flex:1 1 150px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+      <input id="paWatch" type="number" min="2" placeholder="监听间隔秒(默认4)" style="flex:0 0 120px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+      <input id="paDelayMin" type="number" placeholder="延迟ms下限(默认1000)" style="flex:0 0 130px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+      <input id="paDelayMax" type="number" placeholder="延迟ms上限(默认3000)" style="flex:0 0 130px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+      <input id="paCool" type="number" placeholder="规则冷却秒(默认20)" style="flex:0 0 120px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+      <label style="font-size:13px;color:var(--text-sec);display:flex;align-items:center;gap:4px"><input type="checkbox" id="paGuard" style="width:16px;height:16px"> 会话守护</label>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <b style="font-size:13px;color:var(--text-sec)">水群：</b>
+      <label style="font-size:13px;color:var(--text-sec);display:flex;align-items:center;gap:4px"><input type="checkbox" id="paWaterOn" style="width:16px;height:16px"> 启用</label>
+      <input id="paWaterWin" type="number" placeholder="窗口分钟(默认5)" style="flex:0 0 110px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+      <input id="paWaterCnt" type="number" placeholder="同句条数(默认5)" style="flex:0 0 110px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+      <input id="paWaterRep" placeholder="跟发文案(||分隔)" style="flex:1 1 160px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+      <b style="font-size:13px;color:var(--text-sec)">通知：</b>
+      <input id="paBark" placeholder="Bark Key（留空关闭）" style="flex:1 1 120px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+      <input id="paTgBot" placeholder="TG Bot 通知 聊天ID:BotToken" style="flex:1 1 200px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+      <label style="font-size:13px;color:var(--text-sec)"><input type="checkbox" id="paNotOk" style="width:16px;height:16px"> 成功也推</label>
+      <label style="font-size:13px;color:var(--text-sec)"><input type="checkbox" id="paNotFail" style="width:16px;height:16px"> 失败推送</label>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+      <b style="font-size:13px;color:var(--text-sec)">验证码识别（OpenAI 兼容视觉 API，用于自定义任务 captcha 步骤）：</b>
+      <input id="paOcrBase" placeholder="API 地址 https://xxx/v1" style="flex:1 1 160px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+      <input id="paOcrKey" placeholder="API Key" style="flex:1 1 140px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+      <input id="paOcrModel" placeholder="模型(默认 gpt-4o-mini)" style="flex:1 1 140px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    </div>
+    <button class="btn-submit" style="margin-top:8px" onclick="paSaveSettings()">保存设置</button>
+  </details>
+
+  <div class="secthead">监听群 <button class="btn-ghost" style="float:right" onclick="paRefresh()">刷新</button></div>
+  <form onsubmit="return paAddChat(event)" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+    <input id="paChatRef" placeholder="群 @username（必填）" style="flex:1 1 160px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <button class="btn-dns">＋ 添加并监听</button>
+  </form>
+  <div id="paChatList"></div>
+
+  <div class="secthead">关键词规则（自动回复/点表情）</div>
+  <form onsubmit="return paAddRule(event)" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+    <input id="paRName" placeholder="规则名" style="flex:0 0 90px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <input id="paRKw" placeholder="关键词（逗号分隔，支持正则）" style="flex:1 1 170px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <select id="paRAction" style="padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+      <option value="reply">回复文本</option><option value="react">点表情</option><option value="both">回复+表情</option>
+    </select>
+    <input id="paRRep" placeholder="回复内容（||随机）" style="flex:1 1 140px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <input id="paREmoji" placeholder="表情(默认👍)" style="flex:0 0 80px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <label style="font-size:13px;color:var(--text-sec);display:flex;align-items:center;gap:4px"><input type="checkbox" id="paRRegex" style="width:16px;height:16px"> 正则</label>
+    <span class="muted" style="font-size:12px">生效群：</span><span id="paRRoom"></span>
+    <button class="btn-submit">添加</button>
+  </form>
+  <div id="paRuleList"></div>
+
+  <div class="secthead">保号（定时发言） <button class="btn-ghost" style="float:right" onclick="paRefresh()">刷新</button></div>
+  <form onsubmit="return paAddKeep(event)" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+    <input id="paKName" placeholder="名称" style="flex:0 0 80px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <input id="paKContent" placeholder="发言内容（||随机，支持 {num:N}{word:N}{uuid}）" style="flex:1 1 200px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <input id="paKStart" type="time" placeholder="窗口起" style="flex:0 0 84px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <input id="paKEnd" type="time" placeholder="窗口止" style="flex:0 0 84px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <input id="paKInterval" type="number" placeholder="间隔分钟(不用窗口时)" style="flex:0 0 130px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <input id="paKDel" type="number" placeholder="发送后N秒删除(0不删)" style="flex:0 0 130px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">
+    <span class="muted" style="font-size:12px">目标群：</span><span id="paKRoom"></span>
+    <button class="btn-submit">添加</button>
+  </form>
+  <div id="paKeepList"></div>
+
+  <div class="secthead">自动化任务 <button class="btn-ghost" style="float:right" onclick="paRefresh()">刷新</button></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+    <button class="btn-dns" onclick="paTaskForm('signin')">＋ 签到任务</button>
+    <button class="btn-dns" onclick="paTaskForm('grab')">＋ 抢注任务</button>
+    <button class="btn-dns" onclick="paTaskForm('redpack')">＋ 抢红包任务</button>
+    <button class="btn-dns" onclick="paTaskForm('custom')">＋ 自定义任务</button>
+  </div>
+  <div id="paTaskFormWrap"></div>
+  <div id="paTaskList"></div>
+
+  <div class="secthead">日志
+    <select id="paLogType" style="float:right;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px;margin-left:6px" onchange="paLogs()">
+      <option value="">全部</option><option value="reply">回复</option><option value="signin">签到</option><option value="grab">抢注</option><option value="redpack">红包</option><option value="custom">自定义</option><option value="keepalive">保号</option><option value="water">水群</option><option value="guard">守护</option>
+    </select>
+    <input id="paLogQ" placeholder="搜索" style="float:right;width:120px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px" onkeydown="if(event.key==='Enter')paLogs()">
+    <button class="btn-ghost" style="float:right" onclick="paClearLogs()">清空</button>
+  </div>
+  <div id="paLogs" style="max-height:320px;overflow:auto"></div>
 </div>        <!-- 今日统计 -->
         <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
@@ -584,7 +681,7 @@ function enterPanel() {
   $('panelPage').classList.remove('hidden');
   $('topbarLogo').src = 'https://raw.githubusercontent.com/MakkaPakka518/Icon/refs/heads/main/MAKKA_EMBY.JPG';
   $('accRole').textContent = '当前角色：' + (role === 'admin' ? '管理员' : '订阅者');
-  if (role === 'admin') $('tgCard').style.display = '';
+  if (role === 'admin') { $('tgCard').style.display = ''; $('personaCard').style.display = ''; }
   loadAll();
 }
 
@@ -1307,8 +1404,210 @@ async function tgDelAllDone() {
   updateRTT();
   loadPtState();
   loadIpGuard();
-  if (role === 'admin') loadTg();
+  if (role === 'admin') { loadTg(); paRefresh(); }
 }
+
+/* ============ TG Persona ============ */
+let paState = null, paChats = [], paEditRuleId = null, paEditKeepId = null, paEditTaskId = null;
+function paApi(method, url, body) {
+  return api(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+}
+async function paRefresh() {
+  try {
+    const s = await paApi('GET', '/api/tg-persona/state');
+    if (!s || !s.success) return;
+    paState = s; paChats = s.chats || [];
+    $('paOn').checked = !!s.enabled;
+    $('paTz').value = s.settings.tz || '';
+    $('paWatch').value = s.settings.watcherSec || '';
+    $('paDelayMin').value = s.settings.delayMin || '';
+    $('paDelayMax').value = s.settings.delayMax || '';
+    $('paCool').value = s.settings.coolSec || '';
+    $('paGuard').checked = !!s.settings.sessionGuard;
+    $('paWaterOn').checked = !!s.settings.water.enabled;
+    $('paWaterWin').value = s.settings.water.windowMin || '';
+    $('paWaterCnt').value = s.settings.water.count || '';
+    $('paWaterRep').value = s.settings.water.replies || '';
+    $('paBark').value = s.settings.notify.bark || '';
+    $('paTgBot').value = s.settings.notify.tgBot || '';
+    $('paNotOk').checked = !!s.settings.notify.okOn;
+    $('paNotFail').checked = !!s.settings.notify.failOn;
+    $('paOcrBase').value = s.settings.ocr.base || '';
+    $('paOcrKey').value = s.settings.ocr.key || '';
+    $('paOcrModel').value = s.settings.ocr.model || '';
+    $('paStats').textContent = '规则 ' + s.stats.rules + '｜保号 ' + s.stats.keepalive + '｜任务 ' + s.stats.tasks + '｜群 ' + s.stats.chats + '｜日志 ' + s.stats.logs;
+    // 账号下拉（复用 TG 签到账号）
+    const accSel = $('paAccount');
+    const old = accSel.value;
+    accSel.innerHTML = '<option value="">未选择工作账号</option>';
+    try { const tg = await api('/api/tg'); (tg.accounts || []).forEach(a => { const o = document.createElement('option'); o.value = a.id; o.textContent = (a.name || a.phone) + (a.hasSession ? '' : '（无session）'); if (a.id === (s.account && s.account.id)) o.selected = true; accSel.appendChild(o); }); } catch (e) {}
+    if (old) accSel.value = old;
+    renderRooms();
+    paRenderChats(); paRenderRules(); paRenderKeeps(); paRenderTasks(); paLogs();
+  } catch (e) { toast(I.warn + ' Persona 加载失败：' + (e && e.message || e)); }
+}
+function renderRooms() {
+  const rr = paState && paState.rules ? paState.rules.find(r => r.id === paEditRuleId) : null;
+  $('paRRoom').innerHTML = paRoomCheckbox(rr ? rr.chats : [], '');
+  const kk = paState && paState.keepalive ? paState.keepalive.find(k => k.id === paEditKeepId) : null;
+  $('paKRoom').innerHTML = paRoomCheckbox(kk ? kk.chats : [], '');
+}
+function paRoomCheckbox(ids, onChange) {
+  if (!paChats.length) return '<span class="muted" style="font-size:12px">（还没添加群，未选=全部群）</span>';
+  return paChats.map(c => '<label style="font-size:12px;color:var(--text-sec);display:inline-flex;align-items:center;gap:3px;margin-right:6px"><input type="checkbox" data-cid="' + c.id + '" ' + ((ids || []).includes(c.id) ? 'checked' : '') + (onChange ? ' onchange="' + onChange + '"' : '') + ' style="width:14px;height:14px"> ' + c.title + '</label>').join('');
+}
+function paCollectRooms() { return Array.from(document.querySelectorAll('input[data-cid]:checked')).map(x => x.dataset.cid); }
+function paRoomBox(ids) { return '<span id="paRoomBox" style="display:block">' + paRoomCheckbox(ids, '') + '</span>'; }
+
+/* ---- 开关/设置/账号 ---- */
+async function paSetEnabled(on) { try { await paApi('POST', '/api/tg-persona/enable', { enabled: on }); showTip(I.check + (on ? ' 已启用' : ' 已停用')); } catch (e) { toast(I.warn + e.message); } }
+async function paSetAccount() { try { const r = await paApi('POST', '/api/tg-persona/account', { accountId: $('paAccount').value }); if (r && r.success) { showTip(I.check + ' 工作账号：' + (r.account ? r.account.name : '已清空')); paRefresh(); } } catch (e) { toast(I.warn + e.message); } }
+async function paSaveSettings() {
+  const g = (id) => $(id).value.trim();
+  const body = {
+    tz: g('paTz') || 'Asia/Shanghai',
+    watcherSec: Math.max(2, +$('paWatch').value || 4),
+    delayMin: Math.max(0, +$('paDelayMin').value || 1000),
+    delayMax: Math.max(0, +$('paDelayMax').value || 3000),
+    coolSec: Math.max(0, +$('paCool').value || 20),
+    sessionGuard: $('paGuard').checked,
+    water: { enabled: $('paWaterOn').checked, windowMin: Math.max(1, +$('paWaterWin').value || 5), count: Math.max(2, +$('paWaterCnt').value || 5), replies: g('paWaterRep') || '确实||哈哈' },
+    notify: { bark: g('paBark'), tgBot: g('paTgBot'), okOn: $('paNotOk').checked, failOn: $('paNotFail').checked },
+    ocr: { base: g('paOcrBase'), key: g('paOcrKey'), model: g('paOcrModel') }
+  };
+  try { await paApi('POST', '/api/tg-persona/settings', body); showTip(I.check + ' 设置已保存'); paRefresh(); } catch (e) { toast(I.warn + e.message); }
+}
+
+/* ---- 群 ---- */
+async function paAddChat(ev) { ev.preventDefault(); const ref = $('paChatRef').value.trim(); if (!ref) return toast(I.warn + ' 填群 @username'); try { const r = await paApi('POST', '/api/tg-persona/chats', { ref, monitored: true }); if (r.success && r.chat) { showTip(I.check + ' 已添加：' + r.chat.title); $('paChatRef').value = ''; paRefresh(); } else toast(I.warn + (r.error || '添加失败')); } catch (e) { toast(I.warn + e.message); } }
+async function paChatMonitor(id, on) { try { await paApi('POST', '/api/tg-persona/chats/monitor', { id, on }); paRefresh(); } catch (e) { toast(I.warn + e.message); } }
+async function paDelChat(id) { if (!confirm('删除该群？')) return; try { await paApi('DELETE', '/api/tg-persona/chats', { id }); paRefresh(); } catch (e) { toast(I.warn + e.message); } }
+function paRenderChats() {
+  const el = $('paChatList');
+  if (!paChats.length) return el.innerHTML = '<div class="muted" style="font-size:13px">还没有群，先在上方添加（用 @群username，比如 @some_group）。</div>';
+  el.innerHTML = '<div style="display:flex;flex-direction:column;gap:6px">' + paChats.map(c =>
+    '<div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--border);border-radius:9px;background:var(--bg2,#fff)">' +
+    '<span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + c.title + ' <span class="muted" style="font-size:11px">(' + c.kind + ')</span></span>' +
+    '<label style="font-size:12px;color:var(--text-sec);display:flex;align-items:center;gap:3px"><input type="checkbox" ' + (c.monitored ? 'checked' : '') + ' onchange="paChatMonitor(\'' + c.id + '\',this.checked)" style="width:14px;height:14px"> 监听</label>' +
+    '<button class="btn-ghost" onclick="paDelChat(\'' + c.id + '\')">删除</button></div>').join('') + '</div>';
+}
+
+/* ---- 规则 ---- */
+async function paAddRule(ev) { ev.preventDefault(); const body = { name: $('paRName').value.trim() || '未命名', keywords: $('paRKw').value.trim(), regex: $('paRRegex').checked, action: $('paRAction').value, replies: $('paRRep').value, emoji: $('paREmoji').value.trim() || '👍', chats: paCollectRooms() }; if (!body.keywords) return toast(I.warn + ' 关键词不能为空'); try { const r = await paApi(paEditRuleId ? 'PUT' : 'POST', '/api/tg-persona/rules', Object.assign(body, paEditRuleId ? { id: paEditRuleId } : {})); if (r.success) { showTip(I.check + ' 规则已保存'); paEditRuleId = null; $('paRName').value = $('paRKw').value = $('paRRep').value = ''; paRefresh(); } } catch (e) { toast(I.warn + e.message); } }
+function paEditRule(id) { const r = (paState.rules || []).find(x => x.id === id); if (!r) return; paEditRuleId = id; $('paRName').value = r.name; $('paRKw').value = r.keywords; $('paRRegex').checked = !!r.regex; $('paRAction').value = r.action || 'reply'; $('paRRep').value = r.replies || ''; $('paREmoji').value = r.emoji || '👍'; renderRooms(); window.scrollTo(0, $('personaCard').offsetTop); }
+async function paDelRule(id) { if (!confirm('删除该规则？')) return; try { await paApi('DELETE', '/api/tg-persona/rules', { id }); if (paEditRuleId === id) paEditRuleId = null; paRefresh(); } catch (e) { toast(I.warn + e.message); } }
+function paRenderRules() {
+  const list = (paState && paState.rules) || [];
+  const el = $('paRuleList');
+  if (!list.length) return el.innerHTML = '<div class="muted" style="font-size:13px">还没有规则。命中关键词后自动回复 / 点表情。</div>';
+  el.innerHTML = '<div style="display:flex;flex-direction:column;gap:6px">' + list.map(r =>
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;border:1px solid var(--border);border-radius:9px;background:var(--bg2,#fff)">' +
+    '<span style="font-size:13px;font-weight:600">' + r.name + '</span>' +
+    '<span class="muted" style="font-size:12px">' + (r.regex ? '正则 ' : '关键词 ') + r.keywords + '</span>' +
+    '<span class="muted" style="font-size:12px">动作：' + ({ reply: '回复', react: '点表情', both: '回复+表情' })[r.action] + (r.action !== 'react' ? ' 「' + (r.replies || '') + '」' : ' ' + (r.emoji || '👍')) + '</span>' +
+    '<span class="muted" style="font-size:11px">生效群：' + (r.chats && r.chats.length ? paChats.filter(c => r.chats.includes(c.id)).map(c => c.title).join('、') : '全部') + '</span>' +
+    '<span style="flex:1"></span>' +
+    '<label style="font-size:12px;color:var(--text-sec)"><input type="checkbox" ' + (r.enabled !== false ? 'checked' : '') + ' onchange="paApi(\'PUT\',\'/api/tg-persona/rules\',{id:\'' + r.id + '\',enabled:this.checked}).then(paRefresh)" style="width:14px;height:14px"> 启用</label>' +
+    '<button class="btn-ghost" onclick="paEditRule(\'' + r.id + '\')">改</button>' +
+    '<button class="btn-ghost" onclick="paDelRule(\'' + r.id + '\')">删</button></div>').join('') + '</div>';
+}
+
+/* ---- 保号 ---- */
+async function paAddKeep(ev) { ev.preventDefault(); const body = { name: $('paKName').value.trim() || '保号', chats: paCollectRooms(), content: $('paKContent').value.trim(), windowStart: $('paKStart').value, windowEnd: $('paKEnd').value, intervalMin: +$('paKInterval').value || 60, deleteAfterSec: +$('paKDel').value || 0 }; if (!body.content) return toast(I.warn + ' 发言内容不能为空'); try { const r = await paApi(paEditKeepId ? 'PUT' : 'POST', '/api/tg-persona/keepalive', Object.assign(body, paEditKeepId ? { id: paEditKeepId } : {})); if (r.success) { showTip(I.check + ' 保号任务已保存'); paEditKeepId = null; $('paKName').value = $('paKContent').value = ''; paRefresh(); } } catch (e) { toast(I.warn + e.message); } }
+async function paRunKeep(id) { try { const r = await paApi('POST', '/api/tg-persona/keepalive/run', { id }); if (r && r.success) showTip(I.check + ' 已执行保号发言'); else toast(I.warn + (r.error || '执行失败')); paRefresh(); } catch (e) { toast(I.warn + e.message); } }
+function paEditKeep(id) { const k = (paState.keepalive || []).find(x => x.id === id); if (!k) return; paEditKeepId = id; $('paKName').value = k.name; $('paKContent').value = k.content; $('paKStart').value = k.windowStart || ''; $('paKEnd').value = k.windowEnd || ''; $('paKInterval').value = k.intervalMin || 60; $('paKDel').value = k.deleteAfterSec || 0; renderRooms(); window.scrollTo(0, $('personaCard').offsetTop); }
+async function paDelKeep(id) { if (!confirm('删除该保号任务？')) return; try { await paApi('DELETE', '/api/tg-persona/keepalive', { id }); if (paEditKeepId === id) paEditKeepId = null; paRefresh(); } catch (e) { toast(I.warn + e.message); } }
+function paRenderKeeps() {
+  const list = (paState && paState.keepalive) || [];
+  const el = $('paKeepList');
+  if (!list.length) return el.innerHTML = '<div class="muted" style="font-size:13px">还没有保号任务。到点自动发言防掉号，可设定时删除。</div>';
+  el.innerHTML = '<div style="display:flex;flex-direction:column;gap:6px">' + list.map(k =>
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;border:1px solid var(--border);border-radius:9px;background:var(--bg2,#fff)">' +
+    '<span style="font-size:13px;font-weight:600">' + k.name + '</span>' +
+    '<span class="muted" style="font-size:12px">' + (k.windowStart ? '窗口 ' + k.windowStart + '-' + k.windowEnd : '间隔 ' + (k.intervalMin || 60) + ' 分钟') + (k.deleteAfterSec > 0 ? '｜发送后' + k.deleteAfterSec + 's删' : '') + '</span>' +
+    '<span class="muted" style="font-size:12px">' + k.content + '</span>' +
+    '<span class="muted" style="font-size:11px">群：' + (k.chats && k.chats.length ? paChats.filter(c => k.chats.includes(c.id)).map(c => c.title).join('、') : '全部') + '</span>' +
+    '<span style="flex:1"></span>' +
+    '<label style="font-size:12px;color:var(--text-sec)"><input type="checkbox" ' + (k.enabled !== false ? 'checked' : '') + ' onchange="paApi(\'PUT\',\'/api/tg-persona/keepalive\',{id:\'' + k.id + '\',enabled:this.checked}).then(paRefresh)" style="width:14px;height:14px"> 启用</label>' +
+    '<button class="btn-ghost" onclick="paRunKeep(\'' + k.id + '\')">立即执行</button>' +
+    '<button class="btn-ghost" onclick="paEditKeep(\'' + k.id + '\')">改</button>' +
+    '<button class="btn-ghost" onclick="paDelKeep(\'' + k.id + '\')">删</button></div>').join('') + '</div>';
+}
+
+/* ---- 自动化任务 ---- */
+function paTaskForm(kind) {
+  paEditTaskId = null;
+  const w = $('paTaskFormWrap');
+  if (kind === 'signin') w.innerHTML = '<form onsubmit="return paAddTask(event,\'signin\')" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border:1px dashed var(--border);border-radius:10px;padding:10px;margin-bottom:8px">' +
+    '<b style="font-size:13px;color:var(--text-sec)">签到：</b>' +
+    '<input id="paTName" placeholder="名称" style="flex:0 0 90px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTTarget" placeholder="机器人 @bot" style="flex:1 1 120px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTCmd" value="/checkin" style="flex:0 0 80px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTStart" type="time" placeholder="窗口起" style="flex:0 0 80px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTEnd" type="time" placeholder="窗口止" style="flex:0 0 80px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTOk" placeholder="成功词(,隔)" style="flex:0 0 100px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTFail" placeholder="失败词(,隔)" style="flex:0 0 100px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTPoints" placeholder="积分正则" style="flex:0 0 110px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTBtnText" placeholder="按钮文字" style="flex:0 0 100px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTBtnEmoji" placeholder="按钮表情" style="flex:0 0 90px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTClicks" type="number" value="1" placeholder="连点" style="flex:0 0 60px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<span class="muted" style="font-size:12px">结果发群：</span>' + paRoomBox((paEditTaskId ? ((paState.tasks||[]).find(x=>x.id===paEditTaskId)||{}).sendResultToChats : []) || []) +
+    '<button class="btn-submit">添加</button></form>';
+  else if (kind === 'grab') w.innerHTML = '<form onsubmit="return paAddTask(event,\'grab\')" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border:1px dashed var(--border);border-radius:10px;padding:10px;margin-bottom:8px">' +
+    '<b style="font-size:13px;color:var(--text-sec)">抢注：</b>' +
+    '<input id="paTName" placeholder="名称" style="flex:0 0 90px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTKW" placeholder="开注关键词(,隔)" style="flex:1 1 140px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<select id="paTGrabAction" style="padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px"><option value="reply">自动回复</option><option value="send">群发注册</option><option value="both">两者</option></select>' +
+    '<input id="paTReply" placeholder="回复文本({code})" style="flex:1 1 120px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTReg" placeholder="群发注册文本" style="flex:1 1 120px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTExtract" placeholder="提取码正则" style="flex:0 0 120px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<label style="font-size:13px;color:var(--text-sec);display:flex;align-items:center;gap:4px"><input type="checkbox" id="paTGrabRegex" style="width:16px;height:16px"> 正则</label>' +
+    '<span class="muted" style="font-size:12px">生效群：</span>' + paRoomBox([]) +
+    '<button class="btn-submit">添加</button></form>';
+  else if (kind === 'redpack') w.innerHTML = '<form onsubmit="return paAddTask(event,\'redpack\')" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border:1px dashed var(--border);border-radius:10px;padding:10px;margin-bottom:8px">' +
+    '<b style="font-size:13px;color:var(--text-sec)">抢红包：</b>' +
+    '<input id="paTName" placeholder="名称" style="flex:0 0 90px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTEmoji" placeholder="按钮表情(默认🧧)" style="flex:1 1 130px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<input id="paTBtnText" placeholder="按钮文字(可空)" style="flex:1 1 110px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<span class="muted" style="font-size:12px">生效群：</span>' + paRoomBox([]) +
+    '<button class="btn-submit">添加</button></form>';
+  else w.innerHTML = '<form onsubmit="return paAddTask(event,\'custom\')" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border:1px dashed var(--border);border-radius:10px;padding:10px;margin-bottom:8px">' +
+    '<b style="font-size:13px;color:var(--text-sec)">自定义：</b>' +
+    '<input id="paTName" placeholder="名称" style="flex:0 0 90px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<textarea id="paTSteps" placeholder="JSON 步骤数组：[{\"action\":\"send\",\"text\":\"...\"},{\"action\":\"wait\",\"sec\":2},{\"action\":\"click\",\"btnText\":\"领取\"},{\"action\":\"awaitReply\",\"match\":\"成功\",\"timeoutSec\":20}]" rows="3" style="flex:1 1 100%;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:12px;font-family:monospace"></textarea>' +
+    '<span class="muted" style="font-size:12px">生效群：</span>' + paRoomBox([]) +
+    '<input id="paTRetry" type="number" value="0" placeholder="整链重试次数" style="flex:0 0 110px;padding:6px;border-radius:8px;border:1px solid var(--border);background:var(--bg2,#fff);color:var(--text);font-size:13px">' +
+    '<button class="btn-submit">添加</button></form>';
+  w.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+async function paAddTask(ev, kind) { ev.preventDefault(); const g = (id) => $(id) ? $(id).value.trim() : ''; let body = { kind, name: g('paTName') || kind }; try { if (kind === 'signin') body = Object.assign(body, { target: g('paTTarget'), command: g('paTCmd') || '/checkin', windowStart: g('paTStart'), windowEnd: g('paTEnd'), okWords: g('paTOk'), failWords: g('paTFail'), pointsRegex: g('paTPoints'), btnText: g('paTBtnText'), btnEmoji: g('paTBtnEmoji'), clickTimes: Math.max(1, +g('paTClicks') || 1), sendResultToChats: paCollectRooms() }); else if (kind === 'grab') body = Object.assign(body, { keywords: g('paTKW'), regex: $('paTGrabRegex').checked, action: $('paTGrabAction').value, replyText: g('paTReply'), registerText: g('paTReg'), extractRegex: g('paTExtract'), chats: paCollectRooms() }); else if (kind === 'redpack') body = Object.assign(body, { btnEmoji: g('paTEmoji') || '🧧', btnText: g('paTBtnText'), chats: paCollectRooms() }); else { body = Object.assign(body, { steps: JSON.parse(g('paTSteps') || '[]'), retries: +g('paTRetry') || 0, chats: paCollectRooms() }); } } catch (e) { return toast(I.warn + ' 步骤 JSON 格式不对'); }
+  try { const r = await paApi(paEditTaskId ? 'PUT' : 'POST', '/api/tg-persona/tasks', Object.assign(body, paEditTaskId ? { id: paEditTaskId } : {})); if (r.success) { showTip(I.check + ' 任务已保存'); $('paTaskFormWrap').innerHTML = ''; paRefresh(); } } catch (e) { toast(I.warn + e.message); } }
+async function paRunTask(id) { try { const r = await paApi('POST', '/api/tg-persona/tasks/run', { id }); if (r && r.success) showTip(I.check + ' 已执行：' + (r.result || '完成')); else toast(I.warn + (r.error || '执行失败')); paRefresh(); } catch (e) { toast(I.warn + e.message); } }
+function paEditTask(id) { const t = (paState.tasks || []).find(x => x.id === id); if (!t) return; paEditTaskId = id; paTaskForm(t.kind); if (t.kind === 'signin') { $('paTName').value = t.name; $('paTTarget').value = t.target; $('paTCmd').value = t.command; $('paTStart').value = t.windowStart || ''; $('paTEnd').value = t.windowEnd || ''; $('paTOk').value = t.okWords || ''; $('paTFail').value = t.failWords || ''; $('paTPoints').value = t.pointsRegex || ''; $('paTBtnText').value = t.btnText || ''; $('paTBtnEmoji').value = t.btnEmoji || ''; $('paTClicks').value = t.clickTimes || 1; } else if (t.kind === 'grab') { $('paTName').value = t.name; $('paTKW').value = t.keywords; $('paTGrabRegex').checked = !!t.regex; $('paTGrabAction').value = t.action || 'reply'; $('paTReply').value = t.replyText || ''; $('paTReg').value = t.registerText || ''; $('paTExtract').value = t.extractRegex || ''; } else if (t.kind === 'redpack') { $('paTName').value = t.name; $('paTEmoji').value = t.btnEmoji || '🧧'; $('paTBtnText').value = t.btnText || ''; } else { $('paTName').value = t.name; $('paTSteps').value = JSON.stringify(t.steps || []); $('paTRetry').value = t.retries || 0; } }
+async function paDelTask(id) { if (!confirm('删除该任务？')) return; try { await paApi('DELETE', '/api/tg-persona/tasks', { id }); if (paEditTaskId === id) paEditTaskId = null; paRefresh(); } catch (e) { toast(I.warn + e.message); } }
+const paTaskKindName = { signin: '签到', grab: '抢注', redpack: '红包', custom: '自定义' };
+function paRenderTasks() {
+  const list = (paState && paState.tasks) || [];
+  const el = $('paTaskList');
+  if (!list.length) return el.innerHTML = '<div class="muted" style="font-size:13px">还没有自动化任务。</div>';
+  el.innerHTML = '<div style="display:flex;flex-direction:column;gap:6px">' + list.map(t =>
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;border:1px solid var(--border);border-radius:9px;background:var(--bg2,#fff)">' +
+    '<span style="font-size:13px;font-weight:600">[' + (paTaskKindName[t.kind] || t.kind) + '] ' + t.name + '</span>' +
+    '<span class="muted" style="font-size:12px">' + (t.kind === 'signin' ? 'bot ' + (t.target || '') + '｜' + (t.windowStart ? t.windowStart + '-' + t.windowEnd : '间隔' + (t.intervalMin || 1440) + '分') : t.kind === 'grab' ? '关键词 ' + (t.keywords || '') : t.kind === 'redpack' ? '按钮 ' + (t.btnEmoji || '🧧') + (t.btnText || '') : '步骤 ' + (t.steps ? t.steps.length : 0) + ' 个') + '</span>' +
+    '<span class="muted" style="font-size:11px">' + (t.lastTs ? '上次 ' + new Date(t.lastTs).toLocaleString() + (t.lastOk ? '✓' : '✗') : '未运行') + (t.lastMsg ? '｜' + t.lastMsg : '') + '</span>' +
+    '<span style="flex:1"></span>' +
+    '<label style="font-size:12px;color:var(--text-sec)"><input type="checkbox" ' + (t.enabled !== false ? 'checked' : '') + ' onchange="paApi(\'PUT\',\'/api/tg-persona/tasks\',{id:\'' + t.id + '\',enabled:this.checked}).then(paRefresh)" style="width:14px;height:14px"> 启用</label>' +
+    '<button class="btn-ghost" onclick="paRunTask(\'' + t.id + '\')">立即执行</button>' +
+    '<button class="btn-ghost" onclick="paEditTask(\'' + t.id + '\')">改</button>' +
+    '<button class="btn-ghost" onclick="paDelTask(\'' + t.id + '\')">删</button></div>').join('') + '</div>';
+}
+
+/* ---- 日志 ---- */
+async function paLogs() {
+  const type = $('paLogType').value, q = $('paLogQ').value.trim();
+  try { const r = await paApi('GET', '/api/tg-persona/logs?type=' + encodeURIComponent(type) + '&q=' + encodeURIComponent(q)); const logs = (r && r.logs) || []; $('paLogs').innerHTML = logs.length ? '<div style="display:flex;flex-direction:column;gap:5px">' + logs.map(l => '<div style="font-size:12px;padding:6px 8px;border-radius:8px;background:var(--bg2,#fff);border-left:3px solid ' + (l.ok ? '#34c759' : '#ff3b30') + '"><b>' + l.type + '</b> <span class="muted">' + new Date(l.ts).toLocaleString() + '</span> ' + (l.chat ? '｜' + l.chat + ' ' : '') + l.content + '</div>').join('') + '</div>' : '<div class="muted" style="font-size:13px">暂无日志</div>'; } catch (e) { $('paLogs').innerHTML = '<div class="muted">加载失败</div>'; }
+}
+async function paClearLogs() { if (!confirm('清空 Persona 日志？')) return; try { await paApi('POST', '/api/tg-persona/logs/clear', {}); paLogs(); } catch (e) { toast(I.warn + e.message); } }
 
 init();
 </script>

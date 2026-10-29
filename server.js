@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const dns = require('dns');
 
-// VERSION: 2.0.0（新增 TG bot 签到：MTProto 直连、手机号/session 登录、每日随机时刻自动给机器人发签到命令）
+// VERSION: 2.1.0（新增 TG Persona 自动化模块：关键词回复/保号/签到点按钮/抢注/抢红包/自定义任务/水群/通知/会话守护）
 const PORT = parseInt(process.env.PORT || '3333', 10);
 const DATA_DIR = path.join(__dirname, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -853,6 +853,13 @@ async function handleApi(req, res, url) {
   }
 
   if (!role) return sendJSON(res, 401, { success: false, error: 'Unauthorized' });
+
+  // TG Persona（关键词回复/保号/自动化任务/监听等，动态加载，缺文件则 404）
+  if (url.pathname.indexOf('/api/tg-persona') === 0) {
+    const ph = personaApi();
+    if (ph) return ph(req, res, url, role);
+    return sendJSON(res, 404, { success: false, error: 'TG Persona 模块未安装（缺少 tg-persona.js）' });
+  }
 
   // TG bot 签到（MTProto）
   if (url.pathname.indexOf('/api/tg') === 0) return tgApi(req, res, url, role);
@@ -3798,9 +3805,34 @@ async function tgTaskSave(b) {
   }
   return { queued: n };
 }
+// TG Persona 动态加载（文件缺失不影响原有功能）
+let personaCtl = null;
+function personaApi() {
+  if (!personaCtl) {
+    try {
+      const mod = require(path.join(__dirname, 'tg-persona.js'));
+      personaCtl = mod.mount({
+        dataDir: DATA_DIR, tg: tg, tgOpen: tgOpen, tgSeal: tgSeal, tgEnvOf: tgEnvOf,
+        tgErrText: tgErrText, tgPersist: tgPersist,
+        MTProtoClient: TGKIT.MTProtoClient, TLWriter: TGKIT.TLWriter, TLReader: TGKIT.TLReader,
+        saveJSON: saveJSON, loadJSON: loadJSON, sendJSON: sendJSON, readBody: readBody,
+        fs: fs, path: path, crypto: crypto
+      });
+      personaCtl.start();
+      const st = personaCtl.state() || {};
+      console.log('[TG Persona] 已加载，工作账号：' + (st.account || '未选择'));
+    } catch (e) {
+      console.log('[TG Persona] 加载失败：' + ((e && e.message) || e));
+      personaCtl = null;
+    }
+  }
+  return personaCtl ? personaCtl.apiHandler : null;
+}
+
 // 不指定 host：监听系统全部地址（IPv6 双栈，IPv4 自动映射），纯 IPv4 / 纯 IPv6 / 双栈机器均可访问
 server.listen(PORT, () => {
   startTgScheduler();
+  personaApi(); // 预加载 TG Persona（若存在 tg-persona.js）
   console.log(`Emby 反代管理面板已启动: http://0.0.0.0:${PORT} （IPv4 + IPv6）`);
   console.log(`管理员密钥: ${config.adminToken}`);
   console.log(`节点数: ${routes.length}`);

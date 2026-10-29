@@ -132,15 +132,23 @@ say "Node.js 正常：$NODE_BIN (v$NODE_MAJOR)"
 mkdir -p "$INSTALL_DIR/data"
 cd "$INSTALL_DIR"
 
-say "正在从 GitHub 拉取最新版 server.js / panel.html ..."
+say "正在从 GitHub 拉取最新版 server.js / panel.html / tg-persona.js ..."
 curl -fsSL --connect-timeout 10 "$GITHUB_RAW/server.js"  -o server.js.tmp  || true
 curl -fsSL --connect-timeout 10 "$GITHUB_RAW/panel.html" -o panel.html.tmp || true
+curl -fsSL --connect-timeout 10 "$GITHUB_RAW/tg-persona.js" -o tg-persona.js.tmp || true
 if [ -s server.js.tmp ] && [ -s panel.html.tmp ]; then
   mv -f server.js.tmp server.js
   mv -f panel.html.tmp panel.html
-  say "已更新到最新版（覆盖旧文件，配置与节点数据不受影响）"
+  if [ -s tg-persona.js.tmp ]; then
+    mv -f tg-persona.js.tmp tg-persona.js
+    say "已更新到最新版（含 TG Persona 自动化模块）"
+  else
+    rm -f tg-persona.js.tmp
+    warn "tg-persona.js 拉取失败：已安装则保留旧版；否则 TG Persona 功能不可用（不影响面板其余功能）"
+    say "已更新到最新版（配置与节点数据不受影响）"
+  fi
 else
-  rm -f server.js.tmp panel.html.tmp
+  rm -f server.js.tmp panel.html.tmp tg-persona.js.tmp
   if [ -s server.js ] && [ -s panel.html ]; then
     warn "GitHub 拉取失败，改用本目录已有 server.js / panel.html（版本可能偏旧）"
   else
@@ -148,7 +156,7 @@ else
   或修改脚本顶部的 GITHUB_RAW 为你的仓库地址"
   fi
 fi
-say "程序文件就绪：$INSTALL_DIR/server.js / panel.html"
+say "程序文件就绪：$INSTALL_DIR/server.js / panel.html / tg-persona.js"
 
 # ---------- 4. 初始化配置（已存在则保留，可用于升级） ----------
 if [ -f data/config.json ]; then
