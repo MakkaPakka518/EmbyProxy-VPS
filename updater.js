@@ -125,12 +125,24 @@ function createUpdater(options) {
     return (await responseBuffer(response, limit)).toString('utf8');
   }
 
+  async function resolveCommit() {
+    const api = `https://api.github.com/repos/${repo}/commits/${encodeURIComponent(branch)}`;
+    try {
+      const info = JSON.parse(await getText(api));
+      const commit = String(info.sha || '');
+      if (/^[0-9a-f]{40}$/.test(commit)) return commit;
+    } catch (_) {
+      // GitHub API 未登录额度很低；失败后改读公开 Atom，不影响固定 commit 校验。
+    }
+    const atom = await getText(`https://github.com/${repo}/commits/${encodeURIComponent(branch)}.atom`, 2 * 1024 * 1024);
+    const match = atom.match(/Grit::Commit\/([0-9a-f]{40})/i);
+    if (!match) throw new Error('GitHub 返回的 commit 无效');
+    return match[1].toLowerCase();
+  }
+
   async function check() {
     if (state.running) return snapshot();
-    const api = `https://api.github.com/repos/${repo}/commits/${encodeURIComponent(branch)}`;
-    const info = JSON.parse(await getText(api));
-    const commit = String(info.sha || '');
-    if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error('GitHub 返回的 commit 无效');
+    const commit = await resolveCommit();
     const version = validVersion(await getText(`https://raw.githubusercontent.com/${repo}/${commit}/VERSION`, 4096));
     save({ current: current(), latest: version, latestCommit: commit, available: newer(version, current()), checkedAt: Date.now(), ok: null });
     return snapshot();
@@ -271,10 +283,7 @@ function createUpdater(options) {
   }
 
   async function checkDuringRun() {
-    const api = `https://api.github.com/repos/${repo}/commits/${encodeURIComponent(branch)}`;
-    const info = JSON.parse(await getText(api));
-    const commit = String(info.sha || '');
-    if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error('GitHub 返回的 commit 无效');
+    const commit = await resolveCommit();
     const version = validVersion(await getText(`https://raw.githubusercontent.com/${repo}/${commit}/VERSION`, 4096));
     save({ current: current(), latest: version, latestCommit: commit, available: newer(version, current()), checkedAt: Date.now() });
   }

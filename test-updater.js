@@ -44,3 +44,8 @@ test('valid pinned archive replaces allowlist, preserves data and creates backup
   f.updater.start(false);await f.updater._wait();const s=f.updater.snapshot();assert.equal(s.ok,true);assert.equal(s.current,'2.3.0');assert.equal(s.restartNeeded,true);assert.equal(fs.readFileSync(path.join(f.base,'server.js'),'utf8'),'// new server\n');assert.equal(fs.readFileSync(path.join(f.base,'data','keep.json'),'utf8'),'secret-data');
   const backups=fs.readdirSync(path.join(f.base,'data')).filter(n=>n.startsWith('update-backup-'));assert.equal(backups.length,1);assert.equal(fs.readFileSync(path.join(f.base,'data',backups[0],'server.js'),'utf8'),'// test\n');
 });
+
+test('check falls back to public Atom when GitHub API is rate limited',async t=>{
+  const f=fixture(async url=>{if(url.includes('api.github.com'))return response('rate limited',403);if(url.endsWith('/commits/main.atom'))return response('<feed><entry><id>tag:github.com,2008:Grit::Commit/'+SHA+'</id></entry></feed>');if(url.includes('/'+SHA+'/VERSION'))return response('2.3.0\n');throw Error('unexpected '+url);});
+  t.after(()=>fs.rmSync(f.base,{recursive:true,force:true}));const s=await f.updater.check();assert.equal(s.latestCommit,SHA);assert.equal(s.latest,'2.3.0');assert.equal(s.available,true);
+});
