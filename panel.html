@@ -282,6 +282,10 @@
         background: linear-gradient(145deg, rgba(255,255,255,.025), transparent 52%), #142d28;
     }
     body.dark .update-card { background: linear-gradient(120deg, rgba(209,248,121,.11), transparent 48%), #142d28; }
+    /* iOS WebKit 会缓存 body 多层背景；独立固定底层确保深浅模式不混色。 */
+    #panelPage, #loginPage { position:relative; z-index:0; }
+    #panelPage::before, #loginPage::before { content:""; position:fixed; inset:0; z-index:-1; pointer-events:none; background:#f3f2e9; }
+    body.dark #panelPage::before, body.dark #loginPage::before { background:#0b211e; }
     button, input, textarea, select { -webkit-tap-highlight-color: transparent; }
     button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [onclick]:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
     .card, .emby-card, .login-box, .modal-box {
@@ -340,6 +344,19 @@
     .update-card { background: linear-gradient(120deg, var(--soft), transparent 48%), var(--card); }
     .update-status { color: var(--text-sec); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
     .update-log { margin-top:10px; max-height:150px; overflow:auto; padding:10px 12px; border:1px solid var(--border); border-radius:9px; background:var(--bg2); color:var(--text-sec); font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; }
+    #themeToggle.pill-btn { width:44px; height:34px; margin:0; padding:7px 12px; display:inline-flex; align-items:center; justify-content:center; background:var(--soft); border:1px solid var(--border); color:var(--primary); }
+    #themeToggle.pill-btn:hover { background:color-mix(in srgb,var(--primary) 17%,transparent); border-color:var(--primary); }
+    #themeToggle.pill-btn svg { width:17px; height:17px; }
+    .config-fold { padding:0; overflow:hidden; }
+    .config-summary { min-height:70px; padding:20px 22px; display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; list-style:none; user-select:none; }
+    .config-summary::-webkit-details-marker { display:none; }
+    .config-summary-title { min-width:0; display:flex; align-items:center; gap:8px; color:var(--text); font-size:20px; font-weight:700; }
+    .config-summary-title svg { width:1.1em; height:1.1em; color:var(--primary); flex-shrink:0; }
+    .config-arrow { width:19px; height:19px; color:var(--text-sec); flex-shrink:0; transition:transform .2s ease; }
+    .config-fold[open] .config-arrow { transform:rotate(90deg); }
+    .config-fold[open] .config-summary { border-bottom:1px solid var(--border); }
+    .config-summary:hover { background:var(--soft); }
+    .config-body { padding:18px 22px 22px; }
     .site-footer { display:flex; align-items:center; justify-content:center; gap:14px; padding:18px 8px calc(10px + env(safe-area-inset-bottom)); color:var(--text-sec); font-size:11px; }
     .footer-links { display:inline-flex; gap:7px; }
     .footer-links a { width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--border); border-radius:9px; color:var(--text-sec); background:var(--card); transition:.2s; }
@@ -355,8 +372,13 @@
         .pill-btn { padding: 6px 8px; font-size: 0; }
         .pill-btn svg { width: 17px; height: 17px; }
         .rtt-pill { padding: 6px 7px; }
+        #themeToggle.pill-btn { width:38px; height:34px; padding:7px 10px; }
         .container { padding-top: 92px; }
         .card { padding: 13px; border-radius: 15px; }
+        .config-fold { padding:0; }
+        .config-summary { min-height:58px; padding:14px 13px; }
+        .config-summary-title { font-size:17px; }
+        .config-body { padding:14px 13px 13px; }
     }
     @media (max-width: 350px) {
         .brand-copy { display:none; }
@@ -394,12 +416,11 @@
                 <span class="rtt-dot" id="rttDot"></span>
                 <span class="rtt-label">RTT</span>
                 <span id="rttValue">测算中</span>
-                <button id="themeToggle" onclick="toggleDarkMode()" title="切换深色模式"></button>
             </div>
         </div>
         <div class="topbar-right">
             <button class="pill-btn" onclick="showStats()" title="查看今日播放统计"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg> 统计</button>
-            <button class="pill-btn" onclick="openAccount()" title="账户设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.2 4.2l2.8 2.8M17 17l2.8 2.8M1 12h4M19 12h4M4.2 19.8L7 17M17 7l2.8-2.8"/></svg> 账户</button>
+            <button class="pill-btn" id="themeToggle" onclick="toggleDarkMode()" title="切换深浅主题" aria-label="切换深浅主题"></button>
             <button class="pill-close" onclick="confirmLogout()" title="退出系统"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </div>
     </div>
@@ -416,32 +437,6 @@
             <div class="update-status" id="updateStatus" style="margin-top:10px;">正在读取版本…</div>
             <pre class="update-log hidden" id="updateLog"></pre>
         </div>
-        <!-- 反代配置（前后端分离） -->
-        <div class="card">
-            <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 1 1 0-8 5 5 0 0 1 9.6 1.3A3.5 3.5 0 0 1 17 18H7z"/></svg> 反代配置（前后端分离）</h2>
-            <div style="font-size:13px;color:var(--text-sec);margin-bottom:14px;line-height:1.6;">Emby 前端登录域名与后端推流域名可不同。只需填前端域名，后端推流地址会自动识别并反代；也可显式填写后端域名。</div>
-            <div class="row2" style="margin-bottom:14px;">
-                <div class="field">
-                    <label>前端域名（登录/网页/API）</label>
-                    <input id="cfgFrontend" placeholder="如 https://web.emby.com（留空则用节点目标）">
-                </div>
-                <div class="field">
-                    <label>后端推流域名（播放/媒体流）</label>
-                    <input id="cfgBackend" placeholder="如 https://media.emby.com（可留空自动识别）">
-                </div>
-            </div>
-            <div class="field" style="margin-bottom:14px;">
-                <label>全局网络优先（IPv6 / IPv4）</label>
-                <select id="cfgNetPref">
-                    <option value="auto">自动（跟随系统解析顺序）</option>
-                    <option value="v6">全局优先 IPv6</option>
-                    <option value="v4">全局优先 IPv4</option>
-                </select>
-                <div style="font-size:12px;color:var(--text-sec);margin-top:6px;">IPv6 优先适合纯 IPv6 / 双栈机器且源站支持 IPv6 的场景；目标无对应地址族时自动回退。单个节点可在「反代节点 → 编辑」中单独覆盖。</div>
-            </div>
-            <button class="btn-submit" onclick="saveConfig()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg> 保存反代配置</button>
-        </div>
-
         <!-- 反代节点 -->
         <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px;">
@@ -610,6 +605,36 @@
             <div class="chart-wrap" id="trendWrap"><canvas id="trendChart"></canvas></div>
             <div class="chart-wrap" id="nodeWrap"><canvas id="nodeChart"></canvas></div>
         </div>
+        <!-- 低频设置放在全部功能之后，默认收起 -->
+        <details class="card config-fold" id="proxyConfigFold">
+            <summary class="config-summary">
+                <span class="config-summary-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 1 1 0-8 5 5 0 0 1 9.6 1.3A3.5 3.5 0 0 1 17 18H7z"/></svg><span>反代配置（前后端分离）</span></span>
+                <svg class="config-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </summary>
+            <div class="config-body">
+                <div style="font-size:13px;color:var(--text-sec);margin-bottom:14px;line-height:1.6;">Emby 前端登录域名与后端推流域名可不同。只需填前端域名，后端推流地址会自动识别并反代；也可显式填写后端域名。</div>
+                <div class="row2" style="margin-bottom:14px;">
+                    <div class="field">
+                        <label>前端域名（登录/网页/API）</label>
+                        <input id="cfgFrontend" placeholder="如 https://web.emby.com（留空则用节点目标）">
+                    </div>
+                    <div class="field">
+                        <label>后端推流域名（播放/媒体流）</label>
+                        <input id="cfgBackend" placeholder="如 https://media.emby.com（可留空自动识别）">
+                    </div>
+                </div>
+                <div class="field" style="margin-bottom:14px;">
+                    <label>全局网络优先（IPv6 / IPv4）</label>
+                    <select id="cfgNetPref">
+                        <option value="auto">自动（跟随系统解析顺序）</option>
+                        <option value="v6">全局优先 IPv6</option>
+                        <option value="v4">全局优先 IPv4</option>
+                    </select>
+                    <div style="font-size:12px;color:var(--text-sec);margin-top:6px;">IPv6 优先适合纯 IPv6 / 双栈机器且源站支持 IPv6 的场景；目标无对应地址族时自动回退。单个节点可在「反代节点 → 编辑」中单独覆盖。</div>
+                </div>
+                <button class="btn-submit" onclick="saveConfig()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg> 保存反代配置</button>
+            </div>
+        </details>
         <footer class="site-footer" aria-label="项目链接">
             <span>EmbyProxy VPS · v<span id="footerVersion">--</span></span>
             <span class="footer-links">
@@ -813,11 +838,14 @@ function toggleDarkMode() {
   location.reload();
 }
 (function initTheme() {
-  if (localStorage.getItem('emby_proxy_dark') === '1') {
+  const dark = localStorage.getItem('emby_proxy_dark') === '1';
+  if (dark) {
     document.body.classList.add('dark');
     $('themeToggle').innerHTML = I.sun;
+    document.body.style.background = 'radial-gradient(800px 360px at 8% -4%,rgba(66,132,96,.24),transparent 68%),radial-gradient(700px 340px at 96% 12%,rgba(209,248,121,.055),transparent 64%),#0b211e';
   } else {
     $('themeToggle').innerHTML = I.moon;
+    document.body.style.background = 'radial-gradient(800px 360px at 8% -4%,rgba(87,135,72,.13),transparent 68%),radial-gradient(650px 300px at 96% 10%,rgba(209,248,121,.15),transparent 65%),#f3f2e9';
   }
 })();
 

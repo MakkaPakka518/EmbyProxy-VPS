@@ -15,7 +15,7 @@ const path = require('path');
 const dns = require('dns');
 const { spawnSync } = require('child_process');
 
-// VERSION: 2.2.0（修复媒体断线后上游偷跑流量；TG Persona 深绿青柠主题；支持版本检查与一键更新）
+// VERSION: 2.2.1（反代配置移至底部默认折叠；顶栏精简为单一主题按钮）
 const PORT = parseInt(process.env.PORT || '3333', 10);
 const DATA_DIR = path.join(__dirname, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -24,8 +24,8 @@ const STATS_FILE = path.join(DATA_DIR, 'stats.json');
 const PANEL_FILE = path.join(__dirname, 'panel.html');
 const VERSION_FILE = path.join(__dirname, 'VERSION');
 const APP_VERSION = (() => {
-  try { return fs.readFileSync(VERSION_FILE, 'utf8').trim() || '2.2.0'; }
-  catch (_) { return '2.2.0'; }
+  try { return fs.readFileSync(VERSION_FILE, 'utf8').trim() || '2.2.1'; }
+  catch (_) { return '2.2.1'; }
 })();
 
 /* ==========================================================
