@@ -2,7 +2,9 @@
 
 > 由 Cloudflare Workers 版反代面板移植的 VPS 自托管版本。零依赖 Node 实现，**不占用 80/443 端口**，支持**前后端分离**（前端登录域名与后端推流域名不同），只反代前端域名也能自动识别并反代后端推流。
 
-- **管理面板**：iOS 风格 UI（Apple 设计语言），系统级 SF 字体，SF Symbols 风格 SVG 图标（无 emoji），支持深色模式
+- **管理面板**：TG PERSONA 同款深绿青柠主题，深色 / 米白亮色双模式，手机与桌面自适应
+- **媒体断线保护（v2.2.0）**：播放器退出、拖动或网络中断时立即取消上游拉流，并按下游背压转发，避免客户端已断开但 VPS 继续下载整部原盘
+- **版本与一键更新（v2.2.0）**：顶栏显示当前版本，每次进入面板自动检查 GitHub；管理员可一键固定最新 main commit、备份程序文件、校验替换并重启服务
 - **节点列表自动展示延迟**：每个节点卡片自动测速并实时显示延迟，点击徽章可重新测速
 - **节点图标**：内置 TFEL Emby 图标库（528 个透明 PNG），添加/编辑节点时可搜索选择
 - **源站保护**：节点源站地址默认隐藏（点击才可查看），**订阅用户不可见源站地址**，也无测速权限
@@ -21,6 +23,8 @@
 | 端口 | 默认 `3333`，不占用 80/443 |
 | 认证 | 三档：管理员密钥 `ADMIN_TOKEN` > 网页密码（可选）> 订阅者密钥 |
 | 节点反代 | 前缀路由表：`/xxx/**` → 目标地址，多目标逗号分隔自动 failover |
+| 媒体断线保护 | 下游关闭后立即 Abort 上游请求并停止回源；转发遵守 backpressure，避免流量黑洞和内存堆积 |
+| 在线更新 | `VERSION` 版本号、登录自动检查 GitHub、管理员一键更新；固定 commit 下载、限大小/路径校验、程序文件备份与失败回滚 |
 | 前后端分离 | 只需填/反代**前端域名**，媒体源站自动识别并回源推流 |
 | URL 双形式改写 | 已知源站 → 同源简洁形式；未知媒体源站 → 携带完整源站 URL 的绝对回源形式 |
 | `/emby` 前缀回退 | 目标对不上时自动尝试 `目标地址/emby/...` |
@@ -64,6 +68,8 @@
 emby-proxy/
 ├── server.js          # 主程序（零依赖，仅用 Node 原生模块）
 ├── panel.html         # 管理面板前端（iOS 风格）
+├── updater.js         # GitHub 固定 commit 检查、备份、校验、替换与回滚
+├── VERSION            # 当前语义化版本号
 ├── tg-persona.js      # （可选）TG Persona 自动化模块，缺省不影响面板其余功能
 ├── install.sh         # 一键安装 / 升级 / 卸载脚本
 ├── data/
@@ -115,7 +121,7 @@ sudo bash install.sh uninstall
 
 #### 环境要求
 
-任意 Node.js ≥ 12（已实测 v22），零依赖，无需 `npm install`。
+任意 Node.js ≥ 18（推荐 v20，已实测 v22），零第三方依赖，无需 `npm install`。
 
 ### 第一步：建目录、放文件
 
@@ -366,7 +372,8 @@ POST /api/purge-cache      —                      清理缓存
 
 - **改端口**：编辑 `server.js` 顶部 `PORT` 常量后 `systemctl restart emby-proxy`
 - **改密钥**：编辑 `data/config.json` 的 `adminToken` 后重启
-- **升级版本**：用新版 `server.js` / `panel.html` 覆盖 `/opt/emby-proxy/` 里的同名文件，然后 `systemctl restart emby-proxy`（配置和数据都在 `data/`，不会被覆盖）
+- **升级版本（推荐）**：管理员登录面板后，在顶部「系统更新」卡片点「检查更新 → 一键更新」。更新器会固定 GitHub main 的 commit，备份当前程序到 `data/update-backup-*`，校验归档后只替换程序文件；`data/` 配置与账号数据不动。systemd 安装会自动重启。
+- **手动升级**：覆盖 `server.js`、`panel.html`、`tg-persona.js`、`updater.js`、`VERSION` 后执行 `systemctl restart emby-proxy`。
 
 ---
 

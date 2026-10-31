@@ -219,6 +219,151 @@
         #themeToggle svg { width: 15px; height: 15px; }
         .container { padding-top: 118px; }
     }
+
+    /* TG PERSONA 同款深绿青柠主题 */
+    :root {
+        color-scheme: light;
+        --primary: #527923;
+        --primary-hover: #3f6519;
+        --accent: #527923;
+        --bg: #f3f2e9;
+        --bg2: #faf9ef;
+        --card: #fffdf4;
+        --text: #18352d;
+        --text-sec: #4e695e;
+        --border: rgba(38,74,55,.16);
+        --danger: #b5473a;
+        --soft: rgba(82,121,35,.10);
+        --shadow: 0 1px 0 rgba(255,255,255,.85) inset, 0 18px 42px -32px rgba(33,67,51,.45);
+    }
+    body.dark {
+        color-scheme: dark;
+        --primary: #d1f879;
+        --primary-hover: #ddff91;
+        --accent: #d1f879;
+        --bg: #0b211e;
+        --bg2: #102722;
+        --card: #142d28;
+        --text: #eff5e7;
+        --text-sec: #b2c5b7;
+        --border: rgba(164,185,172,.18);
+        --danger: #ffb1a3;
+        --soft: rgba(209,248,121,.11);
+        --shadow: 0 1px 0 rgba(255,255,255,.025) inset, 0 20px 50px -35px rgba(0,0,0,.9);
+    }
+    html { min-width: 0; background: var(--bg); }
+    html, body { overflow-x: hidden; }
+    body {
+        min-width: 0;
+        background:
+          radial-gradient(800px 360px at 8% -4%, rgba(87,135,72,.13), transparent 68%),
+          radial-gradient(650px 300px at 96% 10%, rgba(209,248,121,.15), transparent 65%),
+          var(--bg);
+        line-height: 1.58;
+    }
+    body:not(.dark) {
+        background:
+          radial-gradient(800px 360px at 8% -4%, rgba(87,135,72,.13), transparent 68%),
+          radial-gradient(650px 300px at 96% 10%, rgba(209,248,121,.15), transparent 65%),
+          #f3f2e9;
+    }
+    body:not(.dark) .card, body:not(.dark) .emby-card, body:not(.dark) .login-box, body:not(.dark) .modal-box {
+        background: linear-gradient(145deg, rgba(255,255,255,.025), transparent 52%), #fffdf4;
+    }
+    body:not(.dark) .update-card { background: linear-gradient(120deg, rgba(82,121,35,.10), transparent 48%), #fffdf4; }
+    body.dark {
+        background:
+          radial-gradient(800px 360px at 8% -4%, rgba(66,132,96,.24), transparent 68%),
+          radial-gradient(700px 340px at 96% 12%, rgba(209,248,121,.055), transparent 64%),
+          #0b211e;
+    }
+    /* WebKit 对运行时切换 class 后的多层 var() 背景偶尔不重算，深色层写死底色兜底。 */
+    body.dark .card, body.dark .emby-card, body.dark .login-box, body.dark .modal-box {
+        background: linear-gradient(145deg, rgba(255,255,255,.025), transparent 52%), #142d28;
+    }
+    body.dark .update-card { background: linear-gradient(120deg, rgba(209,248,121,.11), transparent 48%), #142d28; }
+    button, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [onclick]:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
+    .card, .emby-card, .login-box, .modal-box {
+        background: linear-gradient(145deg, rgba(255,255,255,.025), transparent 52%), var(--card);
+        border-color: var(--border);
+        box-shadow: var(--shadow);
+    }
+    .card { border-radius: 18px; margin-bottom: 12px; }
+    .emby-card { border-radius: 13px; }
+    .emby-card:hover { border-color: color-mix(in srgb, var(--primary) 32%, var(--border)); box-shadow: var(--shadow); }
+    .topbar { background: rgba(243,242,233,.90); border-color: var(--border); box-shadow: 0 8px 28px -24px rgba(33,67,51,.7); }
+    body.dark .topbar { background: rgba(11,33,30,.90); }
+    .topbar-logo { border-radius: 10px; border:1px solid var(--border); background:var(--soft); color:var(--primary); box-shadow: 0 0 0 1px rgba(255,255,255,.025) inset; padding:7px; display:inline-flex; align-items:center; justify-content:center; }
+    .topbar-logo:hover { border-color:var(--primary); background:color-mix(in srgb,var(--primary) 16%,transparent); }
+    .topbar-logo svg { width:100%; height:100%; }
+    .brand-copy { display:flex; flex-direction:column; min-width:0; line-height:1.15; }
+    .brand-title { color:var(--text); font-size:13px; font-weight:760; letter-spacing:.045em; white-space:nowrap; }
+    .brand-version { color:var(--text-sec); font-size:10px; margin-top:3px; white-space:nowrap; }
+    .brand-version.has-update { color:var(--primary); }
+    .pill-btn, .rtt-pill { background: var(--soft); border-color: var(--border); border-radius: 10px; color: var(--primary); }
+    .pill-btn:hover, .rtt-pill:hover { background: color-mix(in srgb, var(--primary) 17%, transparent); border-color: var(--primary); }
+    .btn-submit, .login-box button {
+        min-height: 42px;
+        background: var(--primary);
+        color: #fff;
+        border: 1px solid transparent;
+        border-radius: 9px;
+        box-shadow: 0 9px 24px -17px rgba(41,82,27,.8);
+        text-shadow: none;
+    }
+    body.dark .btn-submit, body.dark .login-box button { color: #17311e; box-shadow: 0 9px 24px -16px rgba(209,248,121,.7); }
+    .btn-submit:hover, .login-box button:hover { background: var(--primary-hover); box-shadow: none; }
+    .btn-ghost, .btn-edit, .btn-dns { background: transparent; border-color: var(--border); color: var(--primary); border-radius: 8px; }
+    .btn-ghost:hover, .btn-edit:hover, .btn-dns:hover { background: var(--soft); border-color: var(--primary); box-shadow: none; }
+    .btn-danger, .btn-del { background: rgba(181,71,58,.10); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); color: var(--danger); box-shadow: none; text-shadow: none; }
+    .btn-danger:hover, .btn-del:hover { background: color-mix(in srgb, var(--danger) 17%, transparent); box-shadow: none; }
+    .login-box .logo-icon { background: linear-gradient(145deg, var(--primary), #7ba756); color: #17311e; box-shadow: 0 12px 30px -18px var(--primary); }
+    .field input, .field select, .field textarea, .search-input, .target-input, .login-box input,
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select, textarea {
+        background: var(--bg2) !important;
+        color: var(--text) !important;
+        border-color: var(--border) !important;
+        border-radius: 9px;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus, .login-box input:focus,
+    input:focus, select:focus, textarea:focus { border-color: var(--primary) !important; box-shadow: 0 0 0 3px var(--soft) !important; }
+    input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--text-sec) 72%, transparent); }
+    input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
+    .table-wrapper, .chart-wrap, .icon-grid, .stat-cell, .sub-item, .action-group, .info-row > .badge, #tgCard [style*="background:var(--bg)"] { border-color: var(--border); }
+    .chart-wrap, .icon-grid, .stat-cell, .sub-item, .action-group, .icon-opt, .emby-icon { background: var(--bg2); }
+    .switch { background: color-mix(in srgb, var(--text-sec) 32%, transparent); box-shadow: inset 0 0 0 1px var(--border); }
+    .switch.on { background: var(--primary); }
+    body.dark .switch.on::after { background: #17311e; }
+    .badge { border-radius: 6px; }
+    .secthead { color: var(--text); border-color: var(--border) !important; }
+    .update-card { background: linear-gradient(120deg, var(--soft), transparent 48%), var(--card); }
+    .update-status { color: var(--text-sec); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+    .update-log { margin-top:10px; max-height:150px; overflow:auto; padding:10px 12px; border:1px solid var(--border); border-radius:9px; background:var(--bg2); color:var(--text-sec); font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; }
+    .site-footer { display:flex; align-items:center; justify-content:center; gap:14px; padding:18px 8px calc(10px + env(safe-area-inset-bottom)); color:var(--text-sec); font-size:11px; }
+    .footer-links { display:inline-flex; gap:7px; }
+    .footer-links a { width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--border); border-radius:9px; color:var(--text-sec); background:var(--card); transition:.2s; }
+    .footer-links a:hover { color:var(--primary); border-color:var(--primary); background:var(--soft); transform:translateY(-1px); }
+    .footer-links svg { width:18px; height:18px; }
+    #toast { background: var(--card); color: var(--text); border: 1px solid var(--primary); border-radius: 10px; box-shadow: var(--shadow); }
+    @media (max-width: 640px) {
+        .topbar { padding: 9px 8px; gap: 7px; }
+        .topbar-left { gap: 7px; }
+        .topbar-right { gap: 5px; }
+        .brand-title { font-size: 11px; }
+        .brand-version { font-size: 9px; }
+        .pill-btn { padding: 6px 8px; font-size: 0; }
+        .pill-btn svg { width: 17px; height: 17px; }
+        .rtt-pill { padding: 6px 7px; }
+        .container { padding-top: 92px; }
+        .card { padding: 13px; border-radius: 15px; }
+    }
+    @media (max-width: 350px) {
+        .brand-copy { display:none; }
+        .topbar-logo { width:28px; height:28px; }
+        .rtt-pill { font-size:10px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
     </style>
 </head>
 <body>
@@ -240,7 +385,11 @@
 <div id="panelPage" class="hidden">
     <div class="topbar">
         <div class="topbar-left">
-            <img class="topbar-logo" id="topbarLogo" src="" alt="logo" onclick="openAccount()" title="账户设置" style="cursor:pointer;">
+            <button class="topbar-logo" id="topbarLogo" type="button" onclick="openAccount()" title="账户设置" aria-label="账户设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="3"/><path d="M8 21h8M12 18v3M8 10h8M13 7l3 3-3 3"/></svg></button>
+            <div class="brand-copy">
+                <span class="brand-title">EMBY PROXY</span>
+                <small class="brand-version" id="brandVersion">v--</small>
+            </div>
             <div class="rtt-pill" title="浏览器到面板服务器的往返延迟">
                 <span class="rtt-dot" id="rttDot"></span>
                 <span class="rtt-label">RTT</span>
@@ -256,6 +405,17 @@
     </div>
 
     <div class="container">
+        <div class="card update-card" id="updateCard" style="display:none;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+                <h2 style="margin:0;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg> 系统更新</h2>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn-ghost" id="updateCheckBtn" onclick="checkVersion(true)">检查更新</button>
+                    <button class="btn-submit" id="updateBtn" onclick="startUpdate()">一键更新</button>
+                </div>
+            </div>
+            <div class="update-status" id="updateStatus" style="margin-top:10px;">正在读取版本…</div>
+            <pre class="update-log hidden" id="updateLog"></pre>
+        </div>
         <!-- 反代配置（前后端分离） -->
         <div class="card">
             <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 1 1 0-8 5 5 0 0 1 9.6 1.3A3.5 3.5 0 0 1 17 18H7z"/></svg> 反代配置（前后端分离）</h2>
@@ -450,6 +610,13 @@
             <div class="chart-wrap" id="trendWrap"><canvas id="trendChart"></canvas></div>
             <div class="chart-wrap" id="nodeWrap"><canvas id="nodeChart"></canvas></div>
         </div>
+        <footer class="site-footer" aria-label="项目链接">
+            <span>EmbyProxy VPS · v<span id="footerVersion">--</span></span>
+            <span class="footer-links">
+                <a href="https://github.com/MakkaPakka518/EmbyProxy-VPS" target="_blank" rel="noopener noreferrer" aria-label="打开 GitHub 仓库" title="GitHub"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.78 1.2 1.78 1.2 1.04 1.77 2.72 1.26 3.38.96.1-.75.4-1.26.74-1.55-2.57-.29-5.27-1.29-5.27-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.76 0c2.19-1.49 3.16-1.18 3.16-1.18.63 1.58.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.71 5.39-5.29 5.68.42.36.79 1.06.79 2.14v3.18c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg></a>
+                <a href="https://t.me/MakkaPakkaOvO" target="_blank" rel="noopener noreferrer" aria-label="打开 Telegram" title="Telegram"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.7 3.3 18.4 19c-.25 1.11-.9 1.38-1.83.86l-5.03-3.71-2.43 2.34c-.27.27-.49.49-1.01.49l.36-5.12 9.32-8.42c.41-.36-.09-.56-.63-.2L5.63 12.5.67 10.95c-1.08-.34-1.1-1.08.22-1.6L20.3 1.87c.9-.33 1.69.2 1.4 1.43Z"/></svg></a>
+            </span>
+        </footer>
     </div>
 </div>
 
@@ -634,16 +801,16 @@ async function api(url, opts = {}) {
   const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
   let data = null;
   try { data = await res.json(); } catch (e) {}
-  if (!res.ok && !data) throw new Error(data && data.error ? data.error : ('请求失败 ' + res.status));
+  if (!res.ok) throw new Error(data && data.error ? data.error : ('请求失败 ' + res.status));
   return data;
 }
 
 /* ============ 主题 ============ */
 function toggleDarkMode() {
-  document.body.classList.toggle('dark');
-  const dark = document.body.classList.contains('dark');
+  const dark = !document.body.classList.contains('dark');
   localStorage.setItem('emby_proxy_dark', dark ? '1' : '0');
-  $('themeToggle').innerHTML = dark ? I.sun : I.moon;
+  // iOS WebKit 对多层背景变量的热切换偶尔只重绘一半；整页重载可保证颜色与文字原子切换。
+  location.reload();
 }
 (function initTheme() {
   if (localStorage.getItem('emby_proxy_dark') === '1') {
@@ -653,6 +820,73 @@ function toggleDarkMode() {
     $('themeToggle').innerHTML = I.moon;
   }
 })();
+
+/* ============ 版本与一键更新 ============ */
+let versionState = null;
+let updatePollTimer = null;
+function renderVersion(state) {
+  versionState = state || {};
+  const current = state.current || '--';
+  const brand = $('brandVersion');
+  brand.textContent = 'v' + current + (state.available ? ' · 有更新' : '');
+  $('footerVersion').textContent = current;
+  brand.classList.toggle('has-update', !!state.available);
+  const card = $('updateCard');
+  card.style.display = role === 'admin' ? '' : 'none';
+  if (role !== 'admin') return;
+  const parts = ['当前 v' + current];
+  if (state.latest) parts.push('最新 v' + state.latest);
+  if (state.running) parts.push('正在更新：' + (state.phase || '处理中'));
+  else if (state.ok === false) parts.push('更新失败');
+  else if (state.restartNeeded && state.restartIssued === false) parts.push('文件已更新，请手动重启 emby-proxy');
+  else if (state.restartNeeded) parts.push('文件已更新，正在重启服务');
+  else if (state.available) parts.push('发现新版本');
+  else if (state.latest) parts.push('已是最新版');
+  if (state.error) parts.push(state.error);
+  $('updateStatus').textContent = parts.join(' · ');
+  const logs = Array.isArray(state.log) ? state.log : [];
+  $('updateLog').textContent = logs.join('\n');
+  $('updateLog').classList.toggle('hidden', logs.length === 0);
+  $('updateBtn').disabled = !!state.running || !state.supported;
+  $('updateCheckBtn').disabled = !!state.running;
+}
+async function checkVersion(realtime, quiet) {
+  try {
+    const state = await api('/api/version' + (realtime ? '?check=1' : ''));
+    renderVersion(state);
+    return state;
+  } catch (error) {
+    if (!quiet) toast(I.warn + ' ' + error.message);
+    if ($('brandVersion').textContent === 'v--') $('brandVersion').textContent = '版本读取失败';
+    return null;
+  }
+}
+async function startUpdate() {
+  let state = versionState;
+  if (!state || !state.latest) state = await checkVersion(true, false);
+  if (!state) return;
+  if (!state.available) return toast(I.check + ' 当前已是最新版');
+  if (!confirm('将备份当前程序文件、拉取 GitHub main 最新版本并重启服务，确定更新？')) return;
+  try {
+    const started = await api('/api/update', { method: 'POST', body: JSON.stringify({ force: false }) });
+    renderVersion(started);
+    toast(I.check + ' 已开始更新');
+    clearInterval(updatePollTimer);
+    updatePollTimer = setInterval(async () => {
+      const next = await checkVersion(false, true);
+      if (next && !next.running) {
+        clearInterval(updatePollTimer);
+        updatePollTimer = null;
+        if (next.ok === false) toast(I.warn + ' 更新失败，请查看日志', 4000);
+      }
+    }, 1500);
+  } catch (error) {
+    toast(I.warn + ' ' + error.message, 4000);
+  }
+}
+function autoCheckVersion() {
+  checkVersion(false, true).then(() => checkVersion(true, true));
+}
 
 /* ============ 登录 / 退出 ============ */
 async function doLogin() {
@@ -679,10 +913,10 @@ function confirmLogout() {
 function enterPanel() {
   $('loginPage').classList.add('hidden');
   $('panelPage').classList.remove('hidden');
-  $('topbarLogo').src = 'https://raw.githubusercontent.com/MakkaPakka518/Icon/refs/heads/main/MAKKA_EMBY.JPG';
   $('accRole').textContent = '当前角色：' + (role === 'admin' ? '管理员' : '订阅者');
   if (role === 'admin') { $('tgCard').style.display = ''; $('personaCard').style.display = ''; }
   loadAll();
+  autoCheckVersion();
 }
 
 async function init() {
@@ -1073,6 +1307,11 @@ async function loadStats() {
     }
     // 统计图（Chart.js 未加载时降级为纯数字）
     if (window.Chart) {
+      const darkTheme = document.body.classList.contains('dark');
+      const chartPrimary = darkTheme ? '#d1f879' : '#527923';
+      const chartFill = darkTheme ? 'rgba(209,248,121,.13)' : 'rgba(82,121,35,.12)';
+      Chart.defaults.color = darkTheme ? '#b2c5b7' : '#4e695e';
+      Chart.defaults.borderColor = darkTheme ? 'rgba(164,185,172,.16)' : 'rgba(38,74,55,.13)';
       const trend = data.trend || [];
       if (trend.length) {
         $('trendWrap').style.display = 'block';
@@ -1081,7 +1320,7 @@ async function loadStats() {
           type: 'line',
           data: {
             labels: trend.map(t => t.date.substring(5)),
-            datasets: [{ label: '全站播放次数', data: trend.map(t => t.count), borderColor: '#0071e3', backgroundColor: 'rgba(0,113,227,0.1)', fill: true, tension: 0.3 }]
+            datasets: [{ label: '全站播放次数', data: trend.map(t => t.count), borderColor: chartPrimary, backgroundColor: chartFill, fill: true, tension: 0.3 }]
           },
           options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: '过去 7 天播放趋势', font: { size: 14 } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
         });
@@ -1093,7 +1332,7 @@ async function loadStats() {
           type: 'bar',
           data: {
             labels: keys.map(k => '/' + k),
-            datasets: [{ label: '今日播放', data: keys.map(k => st[k].count), backgroundColor: 'rgba(0,113,227,0.85)', borderRadius: 6 }]
+            datasets: [{ label: '今日播放', data: keys.map(k => st[k].count), backgroundColor: chartPrimary, borderRadius: 6 }]
           },
           options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: '今日各节点播放次数', font: { size: 14 } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
         });

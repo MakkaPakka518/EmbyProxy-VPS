@@ -121,8 +121,8 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 NODE_BIN=$(command -v node)
 NODE_MAJOR=$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)
-if [ "${NODE_MAJOR:-0}" -lt 12 ]; then
-  die "Node 版本过低（当前 v$NODE_MAJOR），需要 ≥ 12。建议升级到 v20：
+if [ "${NODE_MAJOR:-0}" -lt 18 ]; then
+  die "Node 版本过低（当前 v$NODE_MAJOR），需要 ≥ 18。建议升级到 v20：
   Debian/Ubuntu:  curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs
   或用 nvm:      curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && source ~/.bashrc && nvm install 20"
 fi
@@ -132,31 +132,35 @@ say "Node.js 正常：$NODE_BIN (v$NODE_MAJOR)"
 mkdir -p "$INSTALL_DIR/data"
 cd "$INSTALL_DIR"
 
-say "正在从 GitHub 拉取最新版 server.js / panel.html / tg-persona.js ..."
-curl -fsSL --connect-timeout 10 "$GITHUB_RAW/server.js"  -o server.js.tmp  || true
-curl -fsSL --connect-timeout 10 "$GITHUB_RAW/panel.html" -o panel.html.tmp || true
+say "正在从 GitHub 拉取最新版 server.js / panel.html / tg-persona.js / updater.js / VERSION ..."
+curl -fsSL --connect-timeout 10 "$GITHUB_RAW/server.js"     -o server.js.tmp     || true
+curl -fsSL --connect-timeout 10 "$GITHUB_RAW/panel.html"    -o panel.html.tmp    || true
 curl -fsSL --connect-timeout 10 "$GITHUB_RAW/tg-persona.js" -o tg-persona.js.tmp || true
-if [ -s server.js.tmp ] && [ -s panel.html.tmp ]; then
+curl -fsSL --connect-timeout 10 "$GITHUB_RAW/updater.js"    -o updater.js.tmp    || true
+curl -fsSL --connect-timeout 10 "$GITHUB_RAW/VERSION"       -o VERSION.tmp       || true
+if [ -s server.js.tmp ] && [ -s panel.html.tmp ] && [ -s updater.js.tmp ] && [ -s VERSION.tmp ]; then
   mv -f server.js.tmp server.js
   mv -f panel.html.tmp panel.html
+  mv -f updater.js.tmp updater.js
+  mv -f VERSION.tmp VERSION
   if [ -s tg-persona.js.tmp ]; then
     mv -f tg-persona.js.tmp tg-persona.js
-    say "已更新到最新版（含 TG Persona 自动化模块）"
+    say "已更新到最新版（含 TG Persona 自动化与面板一键更新）"
   else
     rm -f tg-persona.js.tmp
     warn "tg-persona.js 拉取失败：已安装则保留旧版；否则 TG Persona 功能不可用（不影响面板其余功能）"
     say "已更新到最新版（配置与节点数据不受影响）"
   fi
 else
-  rm -f server.js.tmp panel.html.tmp tg-persona.js.tmp
-  if [ -s server.js ] && [ -s panel.html ]; then
-    warn "GitHub 拉取失败，改用本目录已有 server.js / panel.html（版本可能偏旧）"
+  rm -f server.js.tmp panel.html.tmp tg-persona.js.tmp updater.js.tmp VERSION.tmp
+  if [ -s server.js ] && [ -s panel.html ] && [ -s updater.js ] && [ -s VERSION ]; then
+    warn "GitHub 拉取失败，改用本目录已有程序文件（版本可能偏旧）"
   else
-    die "GitHub 下载失败。请把 server.js、panel.html 与 install.sh 放在同一目录再运行，
+    die "GitHub 下载失败。请把 server.js、panel.html、updater.js、VERSION 与 install.sh 放在同一目录再运行，
   或修改脚本顶部的 GITHUB_RAW 为你的仓库地址"
   fi
 fi
-say "程序文件就绪：$INSTALL_DIR/server.js / panel.html / tg-persona.js"
+say "程序文件就绪：$INSTALL_DIR（server.js / panel.html / tg-persona.js / updater.js / VERSION）"
 
 # ---------- 4. 初始化配置（已存在则保留，可用于升级） ----------
 if [ -f data/config.json ]; then

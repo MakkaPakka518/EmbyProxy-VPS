@@ -13,14 +13,20 @@ const tls = require('tls');
 const fs = require('fs');
 const path = require('path');
 const dns = require('dns');
+const { spawnSync } = require('child_process');
 
-// VERSION: 2.1.0（新增 TG Persona 自动化模块：关键词回复/保号/签到点按钮/抢注/抢红包/自定义任务/水群/通知/会话守护）
+// VERSION: 2.2.0（修复媒体断线后上游偷跑流量；TG Persona 深绿青柠主题；支持版本检查与一键更新）
 const PORT = parseInt(process.env.PORT || '3333', 10);
 const DATA_DIR = path.join(__dirname, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const ROUTES_FILE = path.join(DATA_DIR, 'routes.json');
 const STATS_FILE = path.join(DATA_DIR, 'stats.json');
 const PANEL_FILE = path.join(__dirname, 'panel.html');
+const VERSION_FILE = path.join(__dirname, 'VERSION');
+const APP_VERSION = (() => {
+  try { return fs.readFileSync(VERSION_FILE, 'utf8').trim() || '2.2.0'; }
+  catch (_) { return '2.2.0'; }
+})();
 
 /* ==========================================================
  * 数据层（JSON 文件存储）
@@ -74,6 +80,32 @@ function applyIpv6Policy() {
   } catch (e) { /* 低版本 Node 不支持则忽略 */ }
 }
 applyIpv6Policy();
+
+/* ==========================================================
+ * 版本检查与在线更新
+ * ========================================================== */
+let updateCtl = null;
+try {
+  const { createUpdater } = require(path.join(__dirname, 'updater.js'));
+  updateCtl = createUpdater({
+    baseDir: __dirname,
+    dataDir: DATA_DIR,
+    repo: 'MakkaPakka518/EmbyProxy-VPS',
+    branch: 'main',
+    service: 'emby-proxy',
+    currentVersion: APP_VERSION,
+    onUpdated: async () => {
+      // install.sh 创建的 systemd 服务会带 INVOCATION_ID；手动 node 启动时不擅自退出。
+      if (!process.env.INVOCATION_ID) return false;
+      const result = spawnSync('systemctl', ['restart', '--no-block', 'emby-proxy'], {
+        stdio: 'ignore', timeout: 5000
+      });
+      return result.status === 0;
+    }
+  });
+} catch (error) {
+  console.error('[更新器] 加载失败:', error.message);
+}
 
 /* ==========================================================
  * 认证（三档：adminToken > 网页密码 > 订阅者）
@@ -461,7 +493,7 @@ async function buildUpstreamCandidates(target, remainingPath, search) {
   return candidates;
 }
 
-async function proxyOnce(targetUrlStr, req, mode, realIp, originHost) {
+async function proxyOnce(targetUrlStr, req, mode, realIp, originHost, signal) {
   const targetUrl = new URL(targetUrlStr);
   const headers = new Headers();
 
@@ -492,7 +524,7 @@ async function proxyOnce(targetUrlStr, req, mode, realIp, originHost) {
     headers.set('X-Forwarded-For', realIp);
   }
 
-  const init = { method: req.method, headers, redirect: 'manual' };
+  const init = { method: req.method, headers, redirect: 'manual', signal };
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     init.body = req.__bodyBuffer || undefined;
     if (init.body) init.duplex = 'half';
@@ -639,6 +671,20 @@ async function handleProxy(req, res, pathname, search) {
       const candidateUrl = candidates[j];
       let upstreamRes = null;
       let targetUrlObj = null;
+      let controller = null;
+      let downstreamAborted = false;
+      const abortUpstream = () => {
+        if (downstreamAborted || res.writableEnded) return;
+        downstreamAborted = true;
+        if (controller && !controller.signal.aborted) controller.abort();
+        if (upstreamRes && upstreamRes.body) {
+          Promise.resolve(upstreamRes.body.cancel()).catch(() => {});
+        }
+      };
+      const onRequestAborted = () => abortUpstream();
+      const onResponseClosed = () => {
+        if (!res.writableEnded) abortUpstream();
+      };
 
       try {
         // 静态缓存命中
@@ -661,7 +707,13 @@ async function handleProxy(req, res, pathname, search) {
           }
         }
 
-        const controller = new AbortController();
+        controller = new AbortController();
+        req.once('aborted', onRequestAborted);
+        res.once('close', onResponseClosed);
+        if (req.aborted || res.destroyed) {
+          abortUpstream();
+          return;
+        }
         const timer = setTimeout(() => controller.abort(), 30000);
         try {
           // 节点级 v6/v4 强制：预解析替换连接地址（Host 头保留原域名），失败自动回退原始地址
@@ -673,10 +725,11 @@ async function handleProxy(req, res, pathname, search) {
             originHost = r.originHost;
           }
           try {
-            upstreamRes = await proxyOnce(requestUrl, req, mode, realIp, originHost);
+            upstreamRes = await proxyOnce(requestUrl, req, mode, realIp, originHost, controller.signal);
           } catch (e) {
+            if (controller.signal.aborted) throw e;
             if (requestUrl !== candidateUrl) {
-              upstreamRes = await proxyOnce(candidateUrl, req, mode, realIp, null);
+              upstreamRes = await proxyOnce(candidateUrl, req, mode, realIp, null, controller.signal);
             } else {
               throw e;
             }
@@ -745,24 +798,50 @@ async function handleProxy(req, res, pathname, search) {
           return;
         }
 
-        // 其他（媒体流等）：流式透传
+        // 其他（媒体流等）：流式透传。严格遵守背压；下游断开时立刻取消上游。
         res.writeHead(status, upstreamHeaders);
         if (upstreamRes.body) {
           for await (const chunk of upstreamRes.body) {
-            res.write(Buffer.from(chunk));
+            if (downstreamAborted || res.destroyed) break;
+            if (!res.write(Buffer.from(chunk))) {
+              await new Promise((resolve, reject) => {
+                const cleanup = () => {
+                  res.removeListener('drain', onDrain);
+                  res.removeListener('close', onClose);
+                  res.removeListener('error', onError);
+                };
+                const onDrain = () => { cleanup(); resolve(); };
+                const onClose = () => { cleanup(); reject(new Error('下游连接已断开')); };
+                const onError = (err) => { cleanup(); reject(err); };
+                res.once('drain', onDrain);
+                res.once('close', onClose);
+                res.once('error', onError);
+              });
+            }
           }
         }
-        res.end();
+        if (!downstreamAborted && !res.writableEnded) res.end();
         return;
       } catch (e) {
+        // 客户端主动退出/拖动后不再尝试候选线路，也不能向已关闭的响应写 502。
+        if (downstreamAborted || res.destroyed) return;
+        // 响应头或部分媒体已经发给客户端后，不能再拼接下一条候选线路。
+        if (res.headersSent) {
+          if (!res.destroyed) res.destroy(e);
+          return;
+        }
         lastError = e;
         if (e.name === 'AbortError') lastError = new Error('上游超时: ' + candidateUrl);
         // 继续尝试下一个候选
         continue;
+      } finally {
+        req.removeListener('aborted', onRequestAborted);
+        res.removeListener('close', onResponseClosed);
       }
     }
   }
 
+  if (res.destroyed || res.writableEnded) return;
   if (lastError) sendText(res, 502, 'Bad Gateway: ' + lastError.message);
   else sendText(res, 502, 'Bad Gateway');
 }
@@ -853,6 +932,27 @@ async function handleApi(req, res, url) {
   }
 
   if (!role) return sendJSON(res, 401, { success: false, error: 'Unauthorized' });
+
+  // 版本信息与 GitHub 一键更新
+  if (url.pathname === '/api/version' && req.method === 'GET') {
+    if (!updateCtl) return sendJSON(res, 200, { current: APP_VERSION, available: false, supported: false, error: 'updater.js 未安装' });
+    try {
+      const state = url.searchParams.get('check') === '1' ? await updateCtl.check() : updateCtl.snapshot();
+      return sendJSON(res, 200, Object.assign({ supported: true }, state));
+    } catch (error) {
+      return sendJSON(res, 502, { success: false, current: APP_VERSION, error: '检查更新失败: ' + error.message });
+    }
+  }
+  if (url.pathname === '/api/update' && req.method === 'POST') {
+    if (!needAdmin(url.pathname)) return;
+    if (!updateCtl) return sendJSON(res, 503, { success: false, error: 'updater.js 未安装' });
+    const body = await readBody(req).then(b => { try { return JSON.parse(b.toString()); } catch (_) { return {}; } });
+    try {
+      return sendJSON(res, 202, Object.assign({ success: true }, updateCtl.start(!!body.force)));
+    } catch (error) {
+      return sendJSON(res, 409, { success: false, error: error.message });
+    }
+  }
 
   // TG Persona（关键词回复/保号/自动化任务/监听等，动态加载，缺文件则 404）
   if (url.pathname.indexOf('/api/tg-persona') === 0) {
@@ -1166,7 +1266,11 @@ const server = http.createServer(async (req, res) => {
     // 其他路径 → 反代
     return await handleProxy(req, res, url.pathname, url.search);
   } catch (e) {
-    try { sendText(res, 500, 'Internal Error: ' + e.message); } catch (_) {}
+    if (!res.headersSent && !res.destroyed) {
+      try { sendText(res, 500, 'Internal Error: ' + e.message); } catch (_) {}
+    } else if (!res.destroyed) {
+      res.destroy(e);
+    }
   }
 });
 
