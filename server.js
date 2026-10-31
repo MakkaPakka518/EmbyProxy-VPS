@@ -15,7 +15,7 @@ const path = require('path');
 const dns = require('dns');
 const { spawnSync } = require('child_process');
 
-// VERSION: 2.2.1（反代配置移至底部默认折叠；顶栏精简为单一主题按钮）
+// VERSION: 2.3.0（媒体 302 默认经 VPS 中转；节点可切换客户端直连；修复形式 B 路径和响应头）
 const PORT = parseInt(process.env.PORT || '3333', 10);
 const DATA_DIR = path.join(__dirname, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -24,8 +24,8 @@ const STATS_FILE = path.join(DATA_DIR, 'stats.json');
 const PANEL_FILE = path.join(__dirname, 'panel.html');
 const VERSION_FILE = path.join(__dirname, 'VERSION');
 const APP_VERSION = (() => {
-  try { return fs.readFileSync(VERSION_FILE, 'utf8').trim() || '2.2.1'; }
-  catch (_) { return '2.2.1'; }
+  try { return fs.readFileSync(VERSION_FILE, 'utf8').trim() || '2.3.0'; }
+  catch (_) { return '2.3.0'; }
 })();
 
 /* ==========================================================
@@ -404,6 +404,64 @@ function nowStr() {
  * 反代引擎
  * ========================================================== */
 const MEDIA_PATH_RE = /(\/videos\/|\/stream\/|\/audio\/|\/subtitles\/|\.m3u8|\.ts(\?|$)|\.mp4(\?|$)|\.mkv(\?|$)|\.flv(\?|$))/i;
+const RELAY_ORIGIN_TTL = 6 * 60 * 60 * 1000;
+const RELAY_ORIGIN_LIMIT = 32;
+const STREAM_STALL_MS = Math.max(1000, Number(process.env.STREAM_STALL_MS) || 5 * 60 * 1000);
+const relayOriginsByRoute = new Map();
+
+function originMatches(origins, url) {
+  return (origins || []).includes(url.origin) || (origins || []).includes(url.host);
+}
+
+function rememberRelayOrigins(routeKey, origins) {
+  if (!routeKey || !Array.isArray(origins) || !origins.length) return;
+  const now = Date.now();
+  let bucket = relayOriginsByRoute.get(routeKey);
+  if (!bucket) {
+    bucket = new Map();
+    relayOriginsByRoute.set(routeKey, bucket);
+  }
+  for (const [origin, ts] of bucket) if (now - ts > RELAY_ORIGIN_TTL) bucket.delete(origin);
+  for (const item of origins) {
+    if (!item || !item.origin) continue;
+    bucket.delete(item.origin);
+    bucket.set(item.origin, now);
+  }
+  while (bucket.size > RELAY_ORIGIN_LIMIT) bucket.delete(bucket.keys().next().value);
+  while (relayOriginsByRoute.size > 256) relayOriginsByRoute.delete(relayOriginsByRoute.keys().next().value);
+}
+
+function isRememberedRelayOrigin(routeKey, origin) {
+  const bucket = relayOriginsByRoute.get(routeKey);
+  if (!bucket) return false;
+  const ts = bucket.get(origin);
+  if (!ts || Date.now() - ts > RELAY_ORIGIN_TTL) {
+    if (ts) bucket.delete(origin);
+    return false;
+  }
+  return true;
+}
+
+function isRelayStreamUrl(raw, baseUrl, frontOrigins, backendOrigins, selfHost, routeKey) {
+  try {
+    const u = new URL(raw, baseUrl);
+    if (!['http:', 'https:'].includes(u.protocol)) return null;
+    if (selfHost && u.host === selfHost) return null;
+    const external = !originMatches(frontOrigins, u);
+    const mediaLike = MEDIA_PATH_RE.test(u.pathname) || MEDIA_PATH_RE.test(u.href)
+      || originMatches(backendOrigins, u) || isRememberedRelayOrigin(routeKey, u.origin);
+    return external && mediaLike ? u : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function sanitizeUpstreamHeaders(headers) {
+  const out = Object.fromEntries(headers.entries());
+  for (const name of ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+    'te', 'trailer', 'transfer-encoding', 'upgrade']) delete out[name];
+  return out;
+}
 
 function isStaticPath(p) {
   return /\.(jpg|jpeg|gif|png|svg|ico|webp|js|css|woff2?|ttf|otf|map|webmanifest|srt|ass|vtt|sub)$/i.test(p)
@@ -438,6 +496,25 @@ function getTargetOrigins(targets, extra) {
   return origins;
 }
 
+function getMediaOriginEntries(values) {
+  const found = [];
+  const push = (origin) => {
+    try {
+      const u = new URL(origin);
+      if (!found.some(x => x.origin === u.origin)) found.push({ origin: u.origin, host: u.host });
+    } catch (_) {}
+  };
+  for (const raw of values || []) {
+    try {
+      const u = new URL(raw);
+      push(u.origin);
+      push(u.origin.replace(/^https:\/\//i, 'http://'));
+      push(u.origin.replace(/^http:\/\//i, 'https://'));
+    } catch (_) {}
+  }
+  return found;
+}
+
 /** 文本 URL 重写：源站地址 → 面板地址
  *  已知源站（target/前后端域名）→ 形式A：/前缀/路径（同源简洁）
  *  自动识别的未知媒体源站 → 形式B：/前缀/完整源站URL（前后端分离自动反代回源） */
@@ -458,22 +535,36 @@ function rewriteUrlsInText(text, knownOrigins, mediaOrigins, proxyOrigin, prefix
   return text;
 }
 
-/** 从 JSON 文本中提取媒体 host（自动识别后端推流） */
+/** 优先解析 JSON URL 字段，文件名含括号/逗号或无扩展名时也能识别媒体源站。 */
 function extractMediaOrigins(text, knownOrigins) {
   const found = [];
-  const re = /https?:\/\/[^\s"'<>;,)}\]\\]+/g;
-  let m;
-  const known = new Set(knownOrigins);
-  while ((m = re.exec(text)) !== null) {
-    const url = m[0].replace(/[.,;:!?]+$/, '');
+  const seen = new Set();
+  const known = new Set(knownOrigins || []);
+  const add = (raw, mediaField) => {
     try {
-      const u = new URL(url);
-      if (known.has(u.origin) || known.has(u.host)) continue;
-      if (MEDIA_PATH_RE.test(u.pathname)) {
-        const key = u.origin;
-        if (!found.some(f => f.origin === key)) found.push({ origin: key, host: u.host });
+      const u = new URL(raw);
+      if (!['http:', 'https:'].includes(u.protocol) || known.has(u.origin) || known.has(u.host)) return;
+      if (mediaField || MEDIA_PATH_RE.test(u.pathname) || MEDIA_PATH_RE.test(u.href)) {
+        if (!seen.has(u.origin)) { seen.add(u.origin); found.push({ origin: u.origin, host: u.host }); }
       }
-    } catch (e) {}
+    } catch (_) {}
+  };
+  try {
+    const value = JSON.parse(text);
+    const queue = [{ value, key: '', depth: 0 }];
+    let count = 0;
+    while (queue.length && count++ < 20000) {
+      const item = queue.pop();
+      if (typeof item.value === 'string') {
+        add(item.value, /^(DirectStreamUrl|TranscodingUrl|MediaUrl|stream_url|media_url)$/i.test(item.key));
+      } else if (item.value && typeof item.value === 'object' && item.depth < 32) {
+        for (const [key, child] of Object.entries(item.value)) queue.push({ value: child, key, depth: item.depth + 1 });
+      }
+    }
+  } catch (_) {
+    const re = /https?:\/\/[^\s"'<>}\]\\]+/g;
+    let m;
+    while ((m = re.exec(text)) !== null) add(m[0].replace(/[.,;:!?]+$/, ''), false);
   }
   return found;
 }
@@ -481,19 +572,19 @@ function extractMediaOrigins(text, knownOrigins) {
 /* ---------- 上游请求 ---------- */
 async function buildUpstreamCandidates(target, remainingPath, search) {
   const candidates = [];
-  let base = target.replace(/\/+$/, '');
-  let p = remainingPath || '/';
-  if (!p.startsWith('/')) p = '/' + p;
-  // 原始拼接
+  // 形式 B 的 target 已是完整媒体 URL，必须保留末尾斜杠和签名路径。
+  let base = remainingPath ? target.replace(/\/+$/, '') : target;
+  // remainingPath 为空时不能再补一个 /。
+  const p = remainingPath ? (remainingPath.startsWith('/') ? remainingPath : '/' + remainingPath) : '';
   candidates.push(base + p + search);
-  // /emby 前缀回退：若裸路径看起来不像 emby 结构，尝试加 /emby
-  if (!/^\/emby(\/|$)/i.test(p)) {
+  // 仅普通节点路径尝试 /emby 回退；完整 URL 不回退，避免媒体地址被二次拼接。
+  if (p && !/^\/emby(\/|$)/i.test(p)) {
     candidates.push(base + '/emby' + p + search);
   }
   return candidates;
 }
 
-async function proxyOnce(targetUrlStr, req, mode, realIp, originHost, signal) {
+async function proxyOnce(targetUrlStr, req, mode, realIp, originHost, signal, forwardCredentials = true) {
   const targetUrl = new URL(targetUrlStr);
   const headers = new Headers();
 
@@ -501,6 +592,8 @@ async function proxyOnce(targetUrlStr, req, mode, realIp, originHost, signal) {
     if (v === undefined) continue;
     if (['host', 'cookie', 'connection', 'content-length', 'transfer-encoding',
          'upgrade', 'http2-settings', 'proxy-connection', 'keep-alive'].includes(k)) continue;
+    if (!forwardCredentials && ['authorization', 'x-emby-token', 'x-mediabrowser-token',
+      'x-emby-authorization', 'x-mediabrowser-authorization', 'x-api-key'].includes(k.toLowerCase())) continue;
     if (Array.isArray(v)) v.forEach(x => headers.append(k, x));
     else headers.set(k, String(v));
   }
@@ -508,7 +601,7 @@ async function proxyOnce(targetUrlStr, req, mode, realIp, originHost, signal) {
   // 去掉面板自身 cookie
   const cookies = (req.headers.cookie || '').split(';').map(s => s.trim()).filter(Boolean)
     .filter(c => !c.toLowerCase().startsWith('admin_token='));
-  if (cookies.length) headers.set('Cookie', cookies.join('; '));
+  if (forwardCredentials && cookies.length) headers.set('Cookie', cookies.join('; '));
 
   // Host 头保留原始域名（节点级 IPv6/IPv4 强制时连接地址被换成 IP，必须保留原域名）
   headers.set('Host', originHost || targetUrl.host);
@@ -593,7 +686,8 @@ function recordProxyHit(req, path) {
   persistConfig();
 }
 async function handleProxy(req, res, pathname, search) {
-  let decodedPath = decodeURIComponent(pathname);
+  // 路径保留百分号编码：整体 decode 会把签名文件路径里的 %2F/%3F 改成分隔符。
+  let decodedPath = pathname;
   // 反代 Token 门禁：开启后路径必须带 /密钥/ 前缀才可反代
   const pt = config.proxyToken || {};
   if (pt.enabled && pt.key) {
@@ -610,11 +704,13 @@ async function handleProxy(req, res, pathname, search) {
     decodedPath = stripped;
   }
   let targetUrls = [];
+  let configuredTargets = [];
   let remainingPath = '';
   let matchedPrefix = null;
   let mode = 'off';
   let enableCache = true;
   let ipv6Mode = 'auto';
+  let relayMedia = true;
   const proxyOrigin = `${req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'}://${req.headers.host}`;
 
   if (decodedPath.startsWith('/http://') || decodedPath.startsWith('/https://')) {
@@ -622,7 +718,8 @@ async function handleProxy(req, res, pathname, search) {
     remainingPath = '';
   } else {
     const parts = decodedPath.split('/');
-    const prefix = parts[1];
+    let prefix = parts[1];
+    try { prefix = decodeURIComponent(prefix || ''); } catch (_) {}
     if (!prefix) return sendText(res, 404, 'Not Found');
     const route = routes.find(r => r.prefix === prefix);
     if (!route) return sendText(res, 404, 'Not Found');
@@ -630,8 +727,10 @@ async function handleProxy(req, res, pathname, search) {
     mode = route.mode || 'off';
     enableCache = route.cache_img !== 'off';
     ipv6Mode = route.v6 || 'auto';
+    relayMedia = route.relay_media !== 'off';
     remainingPath = '/' + parts.slice(2).join('/');
     targetUrls = (route.target || '').split(',').map(s => s.trim()).filter(Boolean);
+    configuredTargets = targetUrls.slice();
     if (remainingPath.startsWith('/http://') || remainingPath.startsWith('/https://')) {
       targetUrls = [remainingPath.substring(1)];
       remainingPath = '';
@@ -660,7 +759,11 @@ async function handleProxy(req, res, pathname, search) {
   }
 
   const realIp = getClientIp(req);
-  const baseOrigins = getTargetOrigins(targetUrls, [config.frontendDomain, config.backendDomain]);
+  // 前端/节点源站走简洁形式 A；显式后端和自动识别媒体源站走完整 URL 形式 B。
+  const frontOrigins = getTargetOrigins(targetUrls, [config.frontendDomain]);
+  const backendOrigins = getTargetOrigins([], [config.backendDomain]);
+  const configuredMediaOrigins = getMediaOriginEntries([config.backendDomain]);
+  const credentialOrigins = getTargetOrigins(configuredTargets, [config.frontendDomain, config.backendDomain]);
 
   let lastError = null;
 
@@ -725,11 +828,11 @@ async function handleProxy(req, res, pathname, search) {
             originHost = r.originHost;
           }
           try {
-            upstreamRes = await proxyOnce(requestUrl, req, mode, realIp, originHost, controller.signal);
+            upstreamRes = await proxyOnce(requestUrl, req, mode, realIp, originHost, controller.signal, originMatches(credentialOrigins, targetUrl));
           } catch (e) {
             if (controller.signal.aborted) throw e;
             if (requestUrl !== candidateUrl) {
-              upstreamRes = await proxyOnce(candidateUrl, req, mode, realIp, null, controller.signal);
+              upstreamRes = await proxyOnce(candidateUrl, req, mode, realIp, null, controller.signal, originMatches(credentialOrigins, targetUrl));
             } else {
               throw e;
             }
@@ -746,41 +849,70 @@ async function handleProxy(req, res, pathname, search) {
           continue;
         }
 
-        const upstreamHeaders = Object.fromEntries(upstreamRes.headers.entries());
+        const upstreamHeaders = sanitizeUpstreamHeaders(upstreamRes.headers);
 
-        // redirect 改写
+        // redirect 改写：默认让媒体 302 经 VPS；节点可显式关闭并让客户端直连。
         if (status >= 300 && status < 400) {
           const loc = upstreamRes.headers.get('location');
-          const rewrittenLoc = loc
-            ? rewriteUrlsInText(loc, baseOrigins, [], proxyOrigin, matchedPrefix || '')
+          let rewrittenLoc = loc
+            ? rewriteUrlsInText(loc, frontOrigins, [], proxyOrigin, matchedPrefix || '')
             : undefined;
-          const body = await upstreamRes.arrayBuffer();
-          const headersOut = { ...upstreamHeaders, 'Content-Type': upstreamRes.headers.get('content-type') || 'text/html; charset=utf-8' };
-          if (rewrittenLoc) headersOut['Location'] = rewrittenLoc;
+          // 相对 Location 也必须补回节点前缀，否则客户端会跳到面板根路径。
+          if (loc) {
+            try {
+              const resolvedLoc = new URL(loc, candidateUrl);
+              if (originMatches(frontOrigins, resolvedLoc)) {
+                const prefixPart = matchedPrefix ? matchedPrefix + '/' : '';
+                rewrittenLoc = `${proxyOrigin}/${proxyUrlPrefix()}${prefixPart}${resolvedLoc.pathname.replace(/^\/+/, '')}${resolvedLoc.search}`;
+              }
+            } catch (_) {}
+          }
+          const relayUrl = loc && isRelayStreamUrl(
+            loc, candidateUrl, frontOrigins, backendOrigins, req.headers.host, matchedPrefix || ''
+          );
+          if (relayUrl) {
+            if (relayMedia) {
+              rememberRelayOrigins(matchedPrefix || '', [{ origin: relayUrl.origin, host: relayUrl.host }]);
+              const prefixPart = matchedPrefix ? matchedPrefix + '/' : '';
+              rewrittenLoc = `${proxyOrigin}/${proxyUrlPrefix()}${prefixPart}${relayUrl.origin}${relayUrl.pathname}${relayUrl.search}`;
+            } else {
+              rewrittenLoc = relayUrl.href;
+            }
+          }
+          if (upstreamRes.body) {
+            try { await upstreamRes.body.cancel(); } catch (_) {}
+          }
+          const headersOut = { ...upstreamHeaders };
+          delete headersOut['location'];
           delete headersOut['content-length'];
-          headersOut['Content-Length'] = String(body.byteLength);
-          headersOut['Cache-Control'] = 'no-store';
+          delete headersOut['content-encoding'];
+          headersOut['content-length'] = '0';
+          headersOut['cache-control'] = 'no-store';
+          if (rewrittenLoc) headersOut['location'] = rewrittenLoc;
           res.writeHead(status, headersOut);
-          res.end(Buffer.from(body));
+          res.end();
           return;
         }
 
-        // 文本类响应：URL 重写（含自动识别后端推流）
+        // 文本类响应：按节点策略改写并按节点隔离学习媒体源站。
         const ct = upstreamRes.headers.get('content-type') || '';
         if (/json|javascript|xml|text/i.test(ct)) {
           const buf = Buffer.from(await upstreamRes.arrayBuffer());
-          let text = buf.toString('utf8');
-
-          // 自动识别：未配置 backendDomain 时，从媒体响应里学习源站
-          const mediaFound = extractMediaOrigins(text, baseOrigins.map(o => o));
-          let rewritten = rewriteUrlsInText(text, baseOrigins, mediaFound, proxyOrigin, matchedPrefix || '');
+          const text = buf.toString('utf8');
+          const mediaFound = extractMediaOrigins(text, frontOrigins);
+          for (const item of configuredMediaOrigins) {
+            if (!originMatches(frontOrigins, new URL(item.origin)) && !mediaFound.some(x => x.origin === item.origin)) mediaFound.push(item);
+          }
+          if (relayMedia) rememberRelayOrigins(matchedPrefix || '', mediaFound);
+          const rewritten = rewriteUrlsInText(
+            text, frontOrigins, relayMedia ? mediaFound : [], proxyOrigin, matchedPrefix || ''
+          );
 
           const headersOut = { ...upstreamHeaders };
           delete headersOut['content-length'];
-          headersOut['Content-Length'] = String(Buffer.byteLength(rewritten));
-          headersOut['Cache-Control'] = 'no-store';
           delete headersOut['content-encoding'];
-          delete headersOut['transfer-encoding'];
+          headersOut['content-length'] = String(Buffer.byteLength(rewritten));
+          headersOut['cache-control'] = 'no-store';
           res.writeHead(status, headersOut);
           res.end(rewritten);
           return;
@@ -789,9 +921,11 @@ async function handleProxy(req, res, pathname, search) {
         // 静态资源缓存（非鉴权）
         if (isStatic && enableCache && !authLike && req.method === 'GET' && status === 200) {
           const buf = Buffer.from(await upstreamRes.arrayBuffer());
-          const headersOut = { ...upstreamHeaders, 'Cache-Control': 'public, max-age=86400' };
+          const headersOut = { ...upstreamHeaders };
           delete headersOut['content-length'];
-          headersOut['Content-Length'] = String(buf.length);
+          delete headersOut['content-encoding'];
+          headersOut['content-length'] = String(buf.length);
+          headersOut['cache-control'] = 'public, max-age=86400';
           putCache(candidateUrl, buf, headersOut);
           res.writeHead(status, headersOut);
           res.end(buf);
@@ -805,7 +939,9 @@ async function handleProxy(req, res, pathname, search) {
             if (downstreamAborted || res.destroyed) break;
             if (!res.write(Buffer.from(chunk))) {
               await new Promise((resolve, reject) => {
+                let stallTimer = null;
                 const cleanup = () => {
+                  if (stallTimer) clearTimeout(stallTimer);
                   res.removeListener('drain', onDrain);
                   res.removeListener('close', onClose);
                   res.removeListener('error', onError);
@@ -813,6 +949,11 @@ async function handleProxy(req, res, pathname, search) {
                 const onDrain = () => { cleanup(); resolve(); };
                 const onClose = () => { cleanup(); reject(new Error('下游连接已断开')); };
                 const onError = (err) => { cleanup(); reject(err); };
+                stallTimer = setTimeout(() => {
+                  cleanup();
+                  reject(new Error('下游长时间无写入进展'));
+                }, STREAM_STALL_MS);
+                if (stallTimer.unref) stallTimer.unref();
                 res.once('drain', onDrain);
                 res.once('close', onClose);
                 res.once('error', onError);
@@ -1024,9 +1165,11 @@ async function handleApi(req, res, url) {
 
     const existing = routes.find(r => r.prefix === prefix);
     if (existing) {
+      if (existing.target !== target) relayOriginsByRoute.delete(prefix);
       existing.target = target;
       existing.mode = body.mode || existing.mode || 'off';
       existing.cache_img = body.cache_img !== undefined ? body.cache_img : existing.cache_img;
+      if (body.relay_media !== undefined) existing.relay_media = body.relay_media === 'off' ? 'off' : 'on';
       if (body.v6 !== undefined) existing.v6 = body.v6;
       if (body.icon !== undefined) existing.icon = body.icon;
     } else {
@@ -1035,6 +1178,7 @@ async function handleApi(req, res, url) {
         target,
         mode: body.mode || 'off',
         cache_img: body.cache_img !== undefined ? body.cache_img : true,
+        relay_media: body.relay_media === 'off' ? 'off' : 'on',
         v6: body.v6 || 'auto',
         icon: body.icon || '',
         sort_order: routes.length + 1,
@@ -1049,6 +1193,7 @@ async function handleApi(req, res, url) {
     if (!needAdmin(url.pathname)) return;
     const prefix = url.searchParams.get('prefix');
     routes = routes.filter(r => r.prefix !== prefix);
+    relayOriginsByRoute.delete(prefix || '');
     persistRoutes();
     return sendJSON(res, 200, { success: true });
   }
@@ -1081,11 +1226,13 @@ async function handleApi(req, res, url) {
       target: String(r.target || '').trim(),
       mode: r.mode || 'off',
       cache_img: r.cache_img !== undefined ? r.cache_img : true,
+      relay_media: r.relay_media === 'off' ? 'off' : 'on',
       v6: r.v6 || 'auto',
       icon: r.icon || '',
       sort_order: r.sort_order || 1,
       createdAt: r.createdAt || nowStr(),
     })).filter(r => r.prefix && r.target);
+    relayOriginsByRoute.clear();
     if (body.config) {
       config.frontendDomain = body.config.frontendDomain || '';
       config.backendDomain = body.config.backendDomain || '';

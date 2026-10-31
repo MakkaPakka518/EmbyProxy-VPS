@@ -694,6 +694,12 @@
             <label class="switch-label">
                 <span class="switch" id="rtCache" onclick="this.classList.toggle('on')"></span> 开启海报及静态资源缓存
             </label>
+            <div>
+                <label class="switch-label">
+                    <span class="switch on" id="rtRelayMedia" onclick="this.classList.toggle('on')"></span> 媒体 302 经 VPS 中转
+                </label>
+                <div style="font-size:12px;color:var(--text-sec);margin:6px 0 0 52px;line-height:1.55;">默认开启，适合源站直链无法访问或需要隐藏媒体源站；关闭后播放器直接访问媒体源站，可节省 VPS 流量。</div>
+            </div>
             <button type="submit" class="btn-submit" id="rtSubmitBtn" style="padding:14px 20px;">保存部署</button>
         </form>
     </div>
@@ -1059,6 +1065,10 @@ function renderRoutes() {
         <span class="badge" style="${r.cache_img ? 'background:rgba(52,199,89,.12);color:#34c759;' : ''}">${r.cache_img ? '已开启' : '关闭'}</span>
       </div>
       <div class="info-row">
+        <span class="info-label">媒体</span>
+        <span class="badge" style="${r.relay_media !== 'off' ? 'background:rgba(209,248,121,.12);color:var(--primary);' : 'background:rgba(255,149,0,.12);color:#ff9500;'}">${r.relay_media !== 'off' ? '经 VPS 中转' : '客户端直连'}</span>
+      </div>
+      <div class="info-row">
         <span class="info-label">源站</span>
         <span style="display:flex;align-items:center;gap:6px;min-width:0;">${originRow}</span>
       </div>
@@ -1174,6 +1184,7 @@ function openNodeModal(prefix) {
   $('rtMode').value = 'off';
   $('rtNetPref').value = 'auto';
   $('rtCache').classList.remove('on');
+  $('rtRelayMedia').classList.add('on');
   $('targetInputs').innerHTML = '';
   addTargetRow();
   selectedIcon = '';
@@ -1189,6 +1200,7 @@ function openNodeModal(prefix) {
       $('rtMode').value = r.mode || 'off';
       $('rtNetPref').value = r.v6 || 'auto';
       $('rtCache').classList.toggle('on', !!r.cache_img);
+      $('rtRelayMedia').classList.toggle('on', r.relay_media !== 'off');
       selectedIcon = r.icon || '';
       if (selectedIcon) $('rtIconSearch').value = selectedIcon;
       renderIconGrid($('rtIconSearch').value);
@@ -1218,10 +1230,11 @@ $('addForm').addEventListener('submit', async (e) => {
   const mode = $('rtMode').value;
   const v6 = $('rtNetPref').value;
   const cache = $('rtCache').classList.contains('on');
+  const relayMedia = $('rtRelayMedia').classList.contains('on') ? 'on' : 'off';
   const btn = $('rtSubmitBtn');
   btn.disabled = true; btn.textContent = '保存中…';
   try {
-    await api('/api/routes', { method: 'POST', body: JSON.stringify({ prefix, target, mode, cache_img: cache, icon: selectedIcon, v6 }) });
+    await api('/api/routes', { method: 'POST', body: JSON.stringify({ prefix, target, mode, cache_img: cache, relay_media: relayMedia, icon: selectedIcon, v6 }) });
     toast(I.check + ' 节点已保存');
     closeNodeModal();
     loadRoutes();
