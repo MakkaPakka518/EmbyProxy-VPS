@@ -617,6 +617,12 @@ async function proxyOnce(targetUrlStr, req, mode, realIp, originHost, signal, fo
     headers.set('X-Forwarded-For', realIp);
   }
 
+  // 删除客户端 IP 头，让 Emby 只看到 VPS 的出站 IP（不伪造 XFF）
+  for (const h of ['x-forwarded-for','x-real-ip','cf-connecting-ip','cf-ipcountry','cf-ray','cf-visitor','true-client-ip','x-client-ip','forwarded','via','x-originating-ip','x-forwarded-server','client-ip']) headers.delete(h);
+
+  // 去掉 Cloudflare Worker/回源留下的代理指纹头
+  for (const h of ['cf-worker','cdn-loop','cf-ew-via','cf-request-id','x-cf-ray']) headers.delete(h);
+
   const init = { method: req.method, headers, redirect: 'manual', signal };
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     init.body = req.__bodyBuffer || undefined;
